@@ -1,0 +1,275 @@
+% Основной стиль текста на странице
+
+\documentclass[a4paper, oneside, 14pt, final]{extreport}
+
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english, russian]{babel}
+
+\usepackage[top=20mm, bottom=27mm, left=30mm, right=15mm]{geometry}
+
+\linespread{1.15} % Reccomended: 1.00, 1.15, 1.25
+
+\newlength{\parinlen}
+\setlength{\parinlen}{12.5mm} % Reccomended: 1.25cm, 1.27cm
+
+\usepackage{indentfirst}
+\setlength{\parindent}{\parinlen}    
+
+% Стиль сносок
+
+\usepackage{perpage}
+\MakePerPage{footnote}
+
+\makeatletter 
+\def\@makefnmark{\hbox{\@textsuperscript{\normalfont\@thefnmark)}}}
+\makeatother
+
+\usepackage[bottom]{footmisc}
+
+% Стиль содержания
+
+\usepackage{tocloft}
+
+\setlength{\cftbeforetoctitleskip}{-1em}
+\setlength{\cftaftertoctitleskip}{1em}
+
+\makeatletter
+\renewcommand{\cftsecfillnum}[1]
+{%
+    \ifnum#1<10%
+    \gdef\@pnumwidth{6pt}%
+    \else%
+    \ifnum#1<100%
+    \gdef\@pnumwidth{14pt}%
+    \else%
+    \gdef\@pnumwidth{18pt}%
+    \fi\fi%
+    {\cftsecleader}\nobreak%
+    \makebox[\@pnumwidth][\cftpnumalign]{\cftsecpagefont #1}\cftsecafterpnum\par%
+}
+
+\renewcommand{\cftsubsecfillnum}[1]
+{%
+    \ifnum#1<10%
+    \gdef\@pnumwidth{6pt}%
+    \else%
+    \ifnum#1<100%
+    \gdef\@pnumwidth{14pt}%
+    \else%
+    \gdef\@pnumwidth{18pt}%
+    \fi\fi%
+    {\cftsecleader}\nobreak%
+    \makebox[\@pnumwidth][\cftpnumalign]{\cftsubsecpagefont #1}\cftsubsecafterpnum\par%
+}
+\makeatother
+
+\renewcommand{\cftsecleader}{\cftdotfill{\cftsecdotsep}}
+\renewcommand{\cftsubsecleader}{\cftdotfill{\cftsubsecdotsep}}
+
+\renewcommand\cftsecdotsep{\cftdot}
+\renewcommand\cftsubsecdotsep{\cftdot}
+
+\cftsetindents{section}{0.5em}{1.0em}
+\cftsetindents{subsection}{1.5em}{1.8em}
+
+% Стиль колонтитулов
+
+\usepackage{fancyhdr} 
+\pagestyle{fancy}
+
+\fancyhf{}
+\fancyfoot[R]{\thepage} 
+
+\renewcommand{\footrulewidth}{0pt}
+\renewcommand{\headrulewidth}{0pt}
+
+\fancypagestyle{plain}{\fancyhf{}\rfoot{\thepage}}
+
+% Стиль секций
+
+\setcounter{secnumdepth}{3}
+
+\renewcommand{\thesection}{\arabic{section}}
+
+\newcounter{appendix}
+
+\makeatletter
+\renewcommand{\@seccntformat}[1]{\csname the#1\endcsname{}~}
+
+\renewcommand{\section}
+{%
+    \clearpage%
+    \@startsection{section}{1}%
+    {\parinlen}%
+    {-1em \@plus -1ex \@minus -.2ex}%
+    {1em \@plus .2ex}%  
+    {\raggedright\normalfont\normalsize\bfseries\MakeUppercase}%
+}
+
+\renewcommand{\subsection}
+{%
+    \@startsection{subsection}{2}%
+    {\parinlen}%
+    {-1em \@plus -1ex \@minus -.2ex}%
+    {1em \@plus .2ex}% 
+    {\raggedright\normalfont\normalsize\bfseries}%
+}
+
+\renewcommand{\subsubsection}
+{%
+    \@startsection{subsubsection}{3}%
+    {\parinlen}%
+    {-1em \@plus -1ex \@minus -.2ex}%
+    {\z@}%                         
+    {\raggedright\normalfont\normalsize\bfseries}%
+}
+
+\newcommand{\@csection}
+{%
+    \clearpage%
+    \@startsection{section}{1}%
+    {\z@}%                                   
+    {-1em \@plus -1ex \@minus -.2ex}%
+    {1em \@plus .2ex}%
+    {\centering\normalfont\normalsize\bfseries\MakeUppercase}%
+}
+    
+\newcommand{\csection}[1]
+{%
+    \@csection*{#1}%
+    \addcontentsline{toc}{section}{#1}%
+} 
+
+\newcommand{\@appendix}
+{%
+    \clearpage%
+    \@startsection{section}{1}%
+    {\z@}%                                   
+    {-1em \@plus -1ex \@minus -.2ex}%
+    {1em \@plus .2ex}%
+    {\centering\normalfont\normalsize\bfseries}%
+}
+
+\renewcommand{\appendix}[2]
+{%
+    \stepcounter{appendix}
+    \@appendix*{\MakeUppercase{Приложение \asbuk{appendix}} \\ (#1) \\ #2}
+    \markboth{\MakeUppercase{#1}}{}
+    \addcontentsline{toc}{section}{Приложение \MakeUppercase{\asbuk{appendix}} (#1) #2}
+}
+\makeatother
+
+% Графические изображения
+
+\usepackage[final]{graphicx}
+\DeclareGraphicsExtensions{.pdf,.png,.jpg,.eps}
+\graphicspath{{images/}}
+
+% Стиль надписей к таблицам и изображениям
+
+\usepackage[nooneline]{caption}
+\usepackage{subcaption}
+
+\DeclareCaptionLabelSeparator{stb}{~--~}
+
+\DeclareCaptionLabelFormat{stbfigure}{Рисунок #2}
+\DeclareCaptionLabelFormat{stbtable}{Таблица #2}
+
+\captionsetup[figure]{labelformat=stbfigure, justification=centering, labelsep=stb, size=small} % Специфическое требование кафедры
+\captionsetup[table]{labelformat=stbtable, justification=raggedright, labelsep=stb, size=normalsize}
+
+% Математика и оформление формул
+
+\usepackage{calc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsthm}
+
+\newlength{\eqindent}
+\setlength{\eqindent}{1.4em} % Reccomended: baselineskip, 1.3em, 1.4em, 1.5em
+
+\makeatletter
+\expandafter\def\expandafter\normalsize\expandafter
+{%
+    \normalsize
+    \setlength\abovedisplayskip{\eqindent - \baselineskip}
+    \setlength\belowdisplayskip{\eqindent}
+    \setlength\abovedisplayshortskip{\eqindent - \baselineskip}
+    \setlength\belowdisplayshortskip{\eqindent}
+}
+\makeatother
+
+\newenvironment{explanation}
+{\begin{itemize}[leftmargin=0cm, itemindent=\widthof{где} + \labelsep , labelsep=\labelsep]\renewcommand{\labelitemi}{}}
+{\end{itemize}}
+
+% Нумерация и стиль перечислений
+
+\usepackage{enumitem}
+
+\makeatletter
+    \AddEnumerateCounter{\asbuk}{\@asbuk}{щ)}
+\makeatother
+
+\setlist{nolistsep}
+
+\renewcommand{\labelenumi}{\arabic{enumi}.}
+
+\setlist[itemize,0]{itemindent=\parindent + 2.2ex, leftmargin=0ex, label=--}
+\setlist[enumerate,1]{itemindent=\parindent + 2.7ex, leftmargin=0ex}
+\setlist[enumerate,2]{itemindent=\parindent + \parindent - 2.7ex}
+
+\AtBeginDocument{\numberwithin{equation}{section}}
+\AtBeginDocument{\numberwithin{table}{section}}
+\AtBeginDocument{\numberwithin{figure}{section}}
+
+% Вспомогательные пакеты
+
+\usepackage{makecell}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{pdfpages}
+\usepackage{textcomp, gensymb}
+\usepackage{tabularx}
+
+% Стиль библиографии
+
+\usepackage[square, numbers, sort&compress]{natbib}
+
+\setlength{\bibsep}{0em}
+
+\bibliographystyle{styles/belarus-specific-utf8gost780u}
+
+\setlength\bibindent{-1.0900cm}
+
+\makeatletter
+\renewcommand\NAT@bibsetnum[1]
+{%
+    \settowidth\labelwidth{\@biblabel{#1}}
+    \setlength{\leftmargin}{\bibindent}\addtolength{\leftmargin}{\dimexpr\labelwidth+\labelsep\relax}%
+    \setlength{\itemindent}{-\bibindent+\parinlen-0.240cm}%
+    \setlength{\listparindent}{\itemindent}%
+    \setlength{\itemsep}{\bibsep}\setlength{\parsep}{\z@}%
+    
+    \ifNAT@openbib
+        \addtolength{\leftmargin}{\bibindent}%
+        \setlength{\itemindent}{-\bibindent}%
+        \setlength{\listparindent}{\itemindent}%
+        \setlength{\parsep}{10pt}%
+    \fi
+}
+\makeatother
+
+% Поддержка ссылок с нижним подчеркиванием в BibTeX
+
+\usepackage{url}
+\urlstyle{same}
+
+% Frenchspacing и перенос слов с дефисом
+
+\def\hyph{-\penalty0\hskip0pt\relax}
+
+\frenchspacing

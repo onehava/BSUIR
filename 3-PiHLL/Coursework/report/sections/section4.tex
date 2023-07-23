@@ -1,0 +1,930 @@
+%\section{Описание классов}
+\section{Структурное проектирование}
+
+\label{class-description}
+
+Перед тем как начать описывать каждый класс по отдельности, стоит прокомментировать
+общую архитектуру программы. 
+
+При проектировании данной программы учитывалась требовательность к производительности
+итоговой исполнительной машины, а также необходимость в поддержании архитектурной 
+целостности проекта при постепенном расширении его функционала.
+
+С этой целью было принято решение не писать <<жадный>> интерпретатор, сразу приступающий
+к исполнению <<сырого>> текста исходной программы, а применить некоторые существующие
+паттерны объектно-ориентированного проектирования, 
+которые используются при создании полноценных языков программирования.
+
+Для этого логика программы разделена на независимые модули, выполняющие преобразование
+исходной программы на соответствующем им уровне абстракции данных.
+
+Основными такими модулями являются модули \emph{лексического}, \emph{синтаксического},
+и \emph{семантического} анализа, последовательно преобразующие
+получаемые данные в данные более высокого уровня абстракции.
+
+После завершения преобразования данные передаются в \emph{исполнительный} модуль,
+реализованный с использованием паттерна проектирования <<Интерпретатор>>.
+
+UML-диаграмма архитектуры проекта интерпретатора
+представлена в \mbox{Приложении \ref{uml} (ГУИР.400201.001 PР)}
+
+\subsection{Класс Core - ядро программы}
+
+Ниже представлен листинг объявления класса Core
+в заголовочном файле <<Core.h>>:
+
+\begin{verbatim}
+class Core {
+public:
+    static void run(const std::string& directory);
+
+private:
+    static void run_program(std::string&& program);
+};
+\end{verbatim}
+
+Метод void run(const std::string\& directory)
+отвечает за запуск программы, 
+записанной в файле, расположенном по пути directory.
+
+Метод void run\_program(std::string\&\& program)
+отвечает за исполнение исходного кода
+программы, представленного в виде строки program.
+
+\subsection{Класс Monitor - монитор ошибок}
+
+Ниже представлен листинг объявления класса Monitor
+в заголовочном файле <<Monitor.h>>:
+
+\begin{verbatim}
+class Monitor {
+public:
+    using process_t = std::function<void(void)>;
+
+    Monitor(Source& source, process_t process);
+    void run();
+    
+private:
+    process_t m_process;
+    Source& m_source;
+
+    void indicate(std::size_t row, 
+                  std::size_t pos,
+                  const std::string& message);
+
+    void underline(std::size_t row, 
+                   std::size_t pos1, std::size_t pos2, 
+                   const std::string& message);
+    };    
+\end{verbatim}
+
+Конструктор Monitor(Source\&, process\_t)
+инициализирует ссылку на адаптер исходного кода программы,
+а также функцию process, 
+исполнение которой будет <<мониторить>> данный класс.
+
+Методы void indicate(...) и void underline(...)
+являются вспомогательными методами вывода декорированных
+сообщений об ошибках: indicate указывает на позицию в строке,
+а underline - на последовательность символов.
+
+\subsection{Класс Error - ошибка языка}
+
+Заголовочный файл Error содержит объявление класса 
+Error как унаследованной от std::exception <<пустышки>>,
+а также производных от него классов.
+
+Ниже представлен листинг объвлений унаследованных
+от Error классов ошибок в заголовочном файле <<Error.h>>:
+
+\begin{verbatim}
+class SyntaxError : public Error {
+public:
+    SyntaxError(std::size_t row, std::size_t pos);
+
+    std::size_t get_row() const;
+    std::size_t get_pos() const;
+
+private:
+    std::size_t m_row;
+    std::size_t m_pos;
+};
+\end{verbatim}
+
+Класс SyntaxError образует подмножество классов
+синтаксических ошибок и содержит в себе поля для хранения
+позиции в файле, где эта ошибка произошла.
+
+\begin{verbatim}
+class UnknownSymbolError : public SyntaxError {
+public:
+    UnknownSymbolError(std::size_t row, 
+                       std::size_t pos, char symbol);
+
+    char get_symbol() const;
+
+private:
+    char m_symbol;
+};
+\end{verbatim}
+
+Класс UnknownSymbolError содержит в себе поля 
+для хранения информации об ошибке <<неизвестный символ>>.
+
+\begin{verbatim}
+class UnterminatedStringError : public SyntaxError {
+public:
+    UnterminatedStringError(std::size_t row, std::size_t pos);
+};
+\end{verbatim}
+
+Класс UnterminatedStringError содержит в себе поля
+для хранения информации об ошибке <<незавершенная строка>>.
+
+\begin{verbatim}
+class TypeError : public Error {
+    ...
+};
+\end{verbatim}
+
+Класс TypeError является <<пустышкой>> и выделяет 
+среди ошибок класса Error подмножество ошибок,
+связанных с типом выражения.
+
+Данное подмножество ошибок используется при семантическом
+анализе выражений для обозначения неверных операций.
+
+\begin{verbatim}
+class WrongExprTypeError : public TypeError {
+public:
+    WrongExprTypeError(Lexeme first, 
+                       Lexeme last, 
+                       Value::Type unexpected, 
+                       Value::Type expected);
+
+    Lexeme get_first() const;
+    Lexeme get_last() const;
+    Value::Type get_expected() const;
+    Value::Type get_unexpected() const;
+
+private:
+    Lexeme m_first, m_last;
+    Value::Type m_expected, m_unexpected;
+};
+\end{verbatim}
+
+Класс WrongExprTypeError содержит в себе поля 
+для хранения информации об ошибке <<неверный тип выражения>>.
+
+\begin{verbatim}
+class UnknownUnaryExprError : public TypeError {
+public:
+    UnknownUnaryExprError(Lexeme op, Value::Type type);
+    Lexeme get_operation() const;
+    Value::Type get_type() const;
+
+private:
+    Lexeme m_op;
+    Value::Type m_type;
+};
+\end{verbatim}
+
+Класс UnknownUnaryExprError содержит в себе поля
+для хранения информации об ошибке <<неизвестная унарная операция>>
+и используется на этапе семантического анализа при обнаружении
+неверных унарных операций.
+
+\begin{verbatim}
+class UnknownBinaryExprError : public TypeError {
+public:
+    UnknownBinaryExprError(Lexeme op, 
+                           Value::Type left, 
+                           Value::Type right);
+
+    Lexeme get_operation() const;
+    Value::Type get_left_type() const;
+    Value::Type get_right_type() const;
+
+private:
+    Lexeme m_op;
+    Value::Type m_left, m_right;
+};            
+\end{verbatim}
+
+Класс UnknownBinaryExprError содержит в себе поля
+для хранения информации об ошибке <<неизвестная бинарная операция>>
+и используется на этапе семантического анализа при обнаружении
+неверных бинарных операций.
+
+\subsection{Класс Source - контейнер программы}
+
+Ниже представлен листинг объявления класса Source
+в заголовочном файле <<Source.h>>:
+
+\begin{verbatim}
+class Source {
+public:
+    class iterator;
+
+    Source(std::string text);
+
+    Iterator begin();
+    Iterator end();
+
+    Line get_by_index(std::size_t index) const;
+
+private:
+    std::string m_text;
+    std::vector<Line> m_content;
+};
+\end{verbatim}
+
+Данный класс выполняет функцию адаптера для исходного кода
+программы, представляя данные таким образом,
+чтобы соответствовать основных характеристикам языка,
+а также содержит в себе вспомогательные адаптеры
+строк для предоставления операции вывода
+строки из текста по её номеру.
+
+Конструктор Source(std::string) принимает исходный код программы,
+приводит все не-строковые записи к верхнему регистру для обеспечения
+регистронезависимости языка при определении его ключевых слов,
+а также создает набор адаптеров строк исходного кода.
+
+Метод begin() предоставляет доступ к содержимому класса
+и возвращает итератор на начало исходного кода программы.
+
+Метод end() предоставляет доступ к содержимому класса 
+и возвращает итератор на конец исходного кода программы.
+
+Метод get\_by\_index(std::size\_t) принимает номер 
+строки в исходном коде и случае её наличия возвращает
+адаптер строки, в случае отсутствия - вызывает
+исключение.
+
+Ниже представлено объявление
+классов Line и Source::iterator в том же
+заголовочном файле:
+
+\begin{verbatim}
+class Line {
+public:
+    friend std::ostream& operator<<(std::ostream& ostream, 
+                                    const Line& line);
+
+private:
+    friend class Source;
+    Line(const char* pointer);
+    const char* const m_pointer;
+};
+
+class Source::Iterator {
+public:
+    Iterator();
+    const char& operator*() const;
+    Iterator& operator++();
+    Iterator operator++(int);
+
+    bool operator!=(const Iterator& other) const;
+    bool operator==(const Iterator& other) const;
+
+    const char* get_ptr() const;
+    std::size_t get_row() const;
+    std::size_t get_pos() const;
+
+private:
+    friend class Source;
+    Iterator(const char* pointer);
+
+    const char* m_cur;
+    std::size_t m_row;
+    std::size_t m_pos;
+};
+\end{verbatim}
+
+Класс Line является вспомогательным и существует для того
+чтобы выводить строку из исходного кода программы без 
+восстановления её длины и потерь памяти на хранение.
+
+Класс Iterator позволяет перемещаться по исходному коду
+программы, хранящемся в адаптере Source. Особенностью его
+реализации является operator++(), содержащий в своей логике
+подсчет номера строки, а также номера текущего символа.
+
+\subsection{Класс Lexeme - лексема языка}
+
+Ниже представлен листинг объявления класса Lexeme
+в заголовочном файле <<Lexeme.h>>:
+
+\begin{verbatim}
+class Lexeme {
+public:
+    enum Type : uint8_t {...};
+
+    Lexeme();
+    Lexeme(Type type, std::string_view view, 
+           std::size_t row, std::size_t pos);
+
+    Type get_type() const;
+    bool has_type(Type type) const;
+
+    std::string_view get_view() const;
+    std::size_t get_row() const;
+    std::size_t get_pos() const;
+
+private:
+    Type m_type;
+    std::string_view m_view;
+    std::size_t m_row, m_pos;
+};
+\end{verbatim}
+
+Класс Lexeme хранит в себе тип лексемы, установленный
+лексическим анализатором, std::string\_view для
+быстрого доступа к представлению лексемы 
+в исходном коде, а также номер строки и позицию символа,
+на которых находится начало объекта лексемы.
+
+\subsection{Класс Lexer - лексический анализатор языка}
+
+Ниже представлен листинг объявления класса Lexer
+в заголовочном файле <<Lexer.h>>:
+
+\begin{verbatim}
+using Lexemas = std::vector<Lexeme>;
+
+class Lexer {
+public:
+    Lexer() = default;
+    Lexemas tokenize(Source::iterator source);
+
+private:
+    Source::iterator m_curr;
+    Source::iterator m_prev;
+
+    bool match(char required);
+
+    Lexeme next();
+    Lexeme make(Lexeme::Type type);
+
+    Lexeme::Type read_lexeme();
+    Lexeme::Type read_number();
+    Lexeme::Type read_string();
+    Lexeme::Type read_unique();
+};
+\end{verbatim}
+
+Метод tokenize(Source::iterator) является основным методом
+класса и отвечает за преобразование исходного кода в набор
+отдельных лексем.
+
+Метод next() пропускает все пробельные символы и комментарии
+начиная с текущей позиции, после чего при помощи
+методов read\_x() осуществляет 
+лексический анализ текущей последовательности символов
+и возвращает полученную лексему.
+
+Методы read\_x() отвечают за обработку соответствующих 
+лексических примитивов языка, выполняют поглощение их 
+символов, а также установления их типов.
+
+Метод match(char) является вспомогательным методом
+и используется в методах чтения для сокращения
+записи по выявлению типа текущего символа и его поглощения
+в случае совпадения.
+
+Метод make(Lexeme::Type) является вспомогательным
+и используется для создания
+полученной в результате текущей итерации
+синтаксического анализа лексемы.
+
+\subsection{Класс Expression - выражение языка}
+
+Класс Expression является базовым типом для определения
+структур представления выражений языка в памяти.
+
+Ниже представлен листинг объявления класса Expression
+в заголовочном файле <<Expression.h>>:
+
+\begin{verbatim}
+class Expression {
+public:
+    enum class Type : uint8_t {
+        Unary, Binary, Numeric, String, Ident,
+    };
+
+    Expression(Type type);
+    Type type() const;
+
+private:
+    Type m_type;
+};
+\end{verbatim}
+
+Класс Expression предоставляет возможность установить
+тип производного класса по полю базового класса
+Expression::m\_type.
+
+Файл содержит объявления следующих производных классов:
+\begin{itemize}
+    \item Unary - хранит Lexeme::Type унарной операции
+          и владеет указателем на другое выражение.
+
+    \item Binary - хранит Lexeme::Type бинарной операции
+          и владеет указателями на два других выражения.
+
+    \item Numeric - хранит значение типа double для
+          сокращения представления от Lexeme к бинарному
+          виду.
+          
+    \item String и Ident - владеют std::string,
+          единственная разница между ними - в типе
+          выражения, которое они собой представляют.
+\end{itemize}
+
+Данный подход в наследовании с сопоставлением
+переменной типа используется как более удобная
+в данном контексте альтернатива виртуальному наследованию
+с восстановлением типа производного класса через
+паттерн проектирования <<Visitor>>.
+
+Также в этом же файле содержится объявление адаптера 
+доступа к набору выражений Expressions:
+
+\begin{verbatim}
+using Expression_ptr = std::unique_ptr<Expression>;
+
+class Expressions {
+public:
+    class iterator;
+    void push_back(Expression_ptr expression);
+    
+    iterator begin() const;
+    iterator end() const;
+
+private:
+    using container_t = std::vector<Expression_ptr>;
+    container_t m_container;
+};
+
+class Expressions::iterator {
+public:
+    iterator() = default;
+    const Expression& operator*() const;
+    iterator& operator++();
+
+    bool operator==(const iterator& other) const;
+    bool operator!=(const iterator& other) const;
+
+private:
+    friend class Expressions;
+    iterator(container_t::pointer pointer);
+
+    container_t ::pointer m_pointer;
+};
+\end{verbatim}
+
+Вся суть данного адаптера состоит в том,
+что он обеспечивает сокрытие деталей реализации 
+хранения объектов Expression в памяти
+и предоставляет доступ к ним
+не через указатели, а через константные ссылки.
+
+Также адаптер содержит метод push\_back(...)
+для возможности создания набора выражений
+без операций копирования.
+
+\subsection{Класс Statement - оператор языка}
+
+Класс Statement является базовым типом для определения
+структур представления операторов языка в памяти.
+
+Ниже представлен листинг объявления класса Statement
+в заголовочном файле <<Statement.h>>:
+
+\begin{verbatim}
+class Statement {
+public:
+    enum class Type : uint8_t {
+        Assign, If, For, While, Input, Print,
+    };
+
+    Statement(Type type);
+    Type type() const;
+
+private:
+    Type m_type;
+};
+\end{verbatim}
+
+Как несложно заметить, класс Statement образует такую же
+иерархию наследования и представления в памяти как и 
+класс Expression.
+
+Для него объявлен адаптер Statements для сокрытия
+памяти хранения объединеных операторов,
+реализованный точно также как и адаптер Expressions.
+
+Файл содержит объявления следующих производных классов:
+\begin{itemize}
+    \item Assign - владеет std::string для хранения 
+          идентификатора и указателем на выражение, 
+          которое этому идентификатору присваивается.
+
+    \item If - владеет указателем на выражение,
+          представляющее собой логическое условие
+          оператора ветвления,
+          а также два адаптера Statements:
+          один для ветки if, другой - для ветки else.
+
+    \item For - владеет std::string для хранения 
+          идентификатора переменной, по которой 
+          цикл итерирует,
+          двумя указателями на выражения,
+          которые представляют собой начальное
+          и конечное значения для итерации,
+          а также хранит адаптер Statements,
+          который представляет собой тело цикла.
+
+    \item While - владеет указателем на выражение,
+          представляющее собой логическое условие
+          цикла с условием,
+          а также хранит адаптер Statements,
+          который представляет собой тело цикла.
+
+    \item Input - владеет двумя std::string:
+          в одной хранится приглашение на ввод,
+          а в другой - идентификатор, который необходимо
+          ввести.
+
+    \item Print - хранит адаптер Expressions,
+          который содержит в себе выражения, которые
+          нужно последовательно вывести на экран.
+\end{itemize}
+
+\subsection{Класс Value - значение переменной}
+
+Ниже представлен листинг объявления класса Value 
+в заголовочном файле <<Value.h>>:
+
+\begin{verbatim}
+class Value {
+public:
+    enum Type : uint8_t {
+        Numeric, Boolean, Literal,
+    };
+
+    Value(bool v);
+    Value(double v);
+    Value(std::string v);
+
+    Type get_type() const;
+
+    bool to_boolean() const;
+    double to_numeric() const;
+    const std::string& to_literal() const;
+
+private:
+    Type m_type;
+    std::variant<bool, double, std::string> m_content;
+};
+\end{verbatim}
+
+Данный класс представляет собой представление
+значения выражения во времени исполнения.
+
+Для класса определены конструкторы из языковых типов,
+а также методы взятия значений по типу.
+
+\subsection{Класс Constexpr - семантическая обертка выражения}
+
+Ниже представлен листинг объявления класса Constexpr
+в заголовочном файле <<Constexpr.h>>:
+
+\begin{verbatim}
+class Constexpr {
+public:
+    static Constexpr build(Lexeme);
+    static Constexpr build(Lexeme, Constexpr);
+    static Constexpr build(Lexeme, Constexpr, Constexpr);
+
+    Expression_ptr get_expression();
+    Value::Type get_type() const;
+
+private:
+    Constexpr(Expression_ptr, Value::Type);
+    Constexpr(Lexeme::Type, Constexpr, Value::Type);
+    Constexpr(Lexeme::Type, Constexpr, Constexpr, Value::Type);
+
+    Expression_ptr m_expr;
+    Value::Type m_type;
+};
+\end{verbatim}
+
+Данный класс является <<умным>> типом данных, и используется
+на этапе парсинга для совмещения синтаксического
+и семантического анализа выражений.
+
+Рассмотрим конструкторы класса:
+\begin{itemize}
+    \item Constexpr(Expression\_ptr, Value::Type) - создает
+          объект, инициализируя его поля по аргументам
+          конструктора.
+          
+    \item Constexpr(Lexeme::Type, Constexpr, Value::Type) -
+          создает объект, инициализируя поле выражения 
+          как унарную операцию от Lexeme::Type и выражения 
+          внутри Constexpr-аргумента.
+
+    \item Constexpr(Lexeme::Type, Constexpr, Constexpr, Value::Type) -
+          создает объект, инициализируя поле выражения
+          как бинарную операцию от Lexeme::Type и выражений
+          внутри Constexpr-аргументов.
+\end{itemize}
+
+Данные конструкторы являются вспомогательными и могут
+использоваться лишь внутри класса, так как не проверяют
+правильность операции по соответствию типов. 
+
+Описанную выше задачу выполняют статические методы build():
+\begin{itemize}
+    \item build(Lexeme) - выполняет построение выражения 
+          со значением согласно правилам языка.
+        
+    \item build(Lexeme, Constexpr) - выполняет построение
+          унарного выражения согласно правилам языка.
+
+    \item build(Lexeme, Constexpr, Constexpr) - выполняет
+          построение бинарного выражения согласно правилам языка.
+\end{itemize}
+
+В случае несоответствия типов операции, методы build(...)
+вызывают соответствующие исключения, 
+описанные в данном разделе выше.
+
+\subsection{Класс Parser - синтаксический анализатор языка}
+
+Ниже представлен листинг объявления класса Parser
+в заголовочном файле <<Parse.h>>:
+
+\begin{verbatim}
+using Lexemas = std::vector<Lexeme>;
+
+class Parser {
+public:
+    Parser() = default;
+    Statements parse(Lexemas::iterator source);
+
+private:
+    Lexemas::iterator m_current;
+
+    template<typename... Types>
+    bool match(Types... types);
+
+    inline const Lexeme& previous() const;
+    inline const Lexeme& current() const;
+    inline void require(Lexeme::Type type);
+    void parse_compound(Statements& statements);
+
+    Statement_ptr parse_statement();
+    std::unique_ptr<If> parse_if();
+    std::unique_ptr<For> parse_for();
+    std::unique_ptr<While> parse_while();
+    std::unique_ptr<Assign> parse_assign();
+    std::unique_ptr<Input> parse_input();
+    std::unique_ptr<Print> parse_print();
+
+    Expression_ptr parse_expression(Value::Type type);
+
+    Constexpr expression();
+
+    Constexpr disjunction();
+    Constexpr conjunction();
+
+    Constexpr comparison();
+
+    Constexpr term();
+    Constexpr factor();
+
+    Constexpr unary();
+    Constexpr primary();
+};
+\end{verbatim}
+
+Данный класс отвечает за синтаксический анализ программы
+и построения ее абстрактного синтаксического дерева,
+в данном проекте представленного в виде списка
+операторов языка, которые могут содержать
+вложенности, тем самым образуя древовидное ветвление связей.
+
+Метод parse(Lexemas::iterator) отвечает за разбор программы
+и в случае успеха возвращает список операторов Statements.
+
+Класс содержит в себе три основные группы функций:
+\begin{enumerate}
+    \item Вспомогательные - используются для чтения лексем.
+    \item Разбора операторов - разбирают лексемы на операторы.
+    \item Разбора выражений - используют метод рекурсивного
+          спуска для формирования правильных выражений.
+\end{enumerate}
+
+Вспомогательные функции:
+\begin{itemize}
+    \item match(Types... types) - в случае совпадения
+          типа текущей лексемы с одним из аргументов
+          поглощает ее и возвращает истину, иначе - ложь.
+
+    \item previous() - возвращает ссылку на предыдущую лексему.
+    
+    \item current() - возвращает ссылку на текущую лексему.
+    
+    \item require(Lexeme::Type type) - требует соответствия
+          текущей лексемы типу аргумента.
+\end{itemize}
+
+Функции разбора операторов:
+\begin{itemize}
+    \item parse\_compound(Statements\&) - 
+          выполняет последовательный разбор 
+          операторов и их запись по ссылке аргумента.
+
+    \item parse\_statement() - выполняет разбор оператора.
+          Определяет тип текущего оператора и возвращает
+          результат посредством делегирования полномочий
+          по разбору на другие parse-методы класса.
+
+    \item parse\_if() - выполняет разбор оператора ветвления.
+    \item parse\_for() - выполняет разбор цикла с шагом.
+    \item parse\_while() - выполняет разбор цикла с условием.
+    \item parse\_assign() - выполняет разбор оператора присваивания.
+    \item parse\_input() - выполняет разбор оператора ввода.
+    \item parse\_print() - выполняет разбор оператора вывода.
+\end{itemize}
+
+Как уже было упомянуто выше, функции разбора выражений 
+используют метод рекурсивного спуска.
+
+Суть данного метода заключается в следующем:
+\begin{itemize}
+    \item Каждая функция отвечает за соответствующие
+          операции со своими особыми свойствами
+          (арность, ассоцитивность, приоритет).
+
+    \item Порядок вызова функций определяется в первую
+          очередь приоритетом соответствующих ей операций.
+
+    \item Разбор выражения начинается с вызова
+          первой определенной по порядку функции.
+
+    \item Функция производит соответствующие проверки
+          и в соответствии со своей логикой возвращает
+          либо конечное выражение, либо результат вызова
+          следующей по порядку функции.
+          
+    \item Таким образом, каждая функция <<пробрасывает>>
+          через себя вызов других функций,
+          в результате чего каждая вызванная функция
+          владеет данными о соответствующей им операции.
+
+    \item Разбор завершается сверткой <<проброса>>,
+          когда вызываемые функции перестают вызывать 
+          функции более низкого порядка.
+\end{itemize}
+
+\subsection{Класс Registry - адаптер для хранения переменных}
+
+Ниже представлен листинг объявления класса Registry
+в заголовочном файле <<Registry.h>>:
+
+\begin{verbatim}
+class Registry {
+public:
+    Value& operator[](const std::string& ident);
+
+private:
+    std::unordered_map<std::string, Value> m_vars;
+};
+\end{verbatim}
+
+Функция-член класса operator[~](const std::string\&)
+предоставляет доступ к значению переменной по её названию,
+возвращая изменяемую ссылку на объект.
+
+\subsection{Класс Evaluator - вычислитель выражений}
+
+Ниже представлен листинг объявления класса Evaluator
+в заголовочном файле <<Evaluator.h>>:
+
+\begin{verbatim}
+class Evaluator {
+public:
+    Evaluator(Registry& registry);
+    Value evaluate(const Expression& expr);
+
+private:
+    Registry& m_registry;
+
+    inline Value evaluate(const Unary& unary);
+    inline Value evaluate(const Binary& binary);
+    inline Value evaluate(const Numeric& numeric);
+    inline Value evaluate(const String& string);
+    inline Value evaluate(const Ident& ident);
+};      
+\end{verbatim}
+
+Класс Evaluator по своей структуре напоминает
+реализацию паттерна проектирования <<Посетитель>>,
+поскольку содержит в себе приватные функции,
+отвечающие за посещение выражений соответствующего типа.
+
+Конструктор Evaluator(Registry\&) связывает объект класса
+Evaluator с объектом класса Registry для вычисления
+выражений с переменными величинами.
+
+Ниже представлено описание функций вычисления:
+\begin{itemize}
+    \item evaluate(const Expression\& expr) -
+          определяет тип текущего выражения и возвращает
+          результат его вычисления посредством делегирования
+          вычисления другим функциям вычисления.
+
+    \item evaluate(const Unary\&) -
+          вычисляет унарное выражение посредством
+          применения операции по отношению к результату
+          вызова функции evaluate(...) для вложенного выражения.
+
+    \item evaluate(const Binary\&) -
+          вычисляет бинарное выражение посредством
+          применения операции по отножению к результатом
+          вызовов функции evaluate(...) для вложенных выражений.
+
+    \item evaluate(const Numeric\&) -
+          возвращает численное значение,
+          хранящееся в выражении типа Numeric.
+          
+    \item evaluate(const String\&) -
+          возвращает строковое значение,
+          хранящееся в выражении типа String.
+
+    \item evaluate(const Ident\&) - 
+          возвращает выражение, хранящееся
+          в реестре переменных под названием идентификатора.  
+\end{itemize}
+
+\subsection{Класс Interpreter - интерпретатор программы}
+
+Ниже представлен листинг объявления класса Interpreter
+в заголовочном файле <<Interpreter.h>>:
+
+\begin{verbatim}
+class Interpreter {
+public:
+    Interpreter();
+    void execute(const Statements& statements);
+
+private:
+    Registry registry;
+    Evaluator evaluator;
+
+    void execute(const Statement& stmt);
+    inline void execute(const If& stmt);
+    inline void execute(const For& stmt);
+    inline void execute(const While& stmt);
+    inline void execute(const Assign& stmt);
+    inline void execute(const Input& stmt);
+    inline void execute(const Print& stmt);
+};
+\end{verbatim}
+
+Класс Interpreter по своей структуре напоминает
+реализацию паттерна <<Посетитель>>,
+и имеет реализацию, аналогичную классу Evaluator.
+
+Ниже представлены функции исполнения:
+\begin{itemize}
+    \item execute(const Statements\&) - производит
+          последовательное исполнение операторов.
+
+    \item execute(const Statement\&) -
+          определяет тип текущего оператора и производит 
+          его исполнение посредством делегирования
+          другим функциям вычисления.
+
+    \item execute(const If\&) -
+          исполняет оператор \emph{If}.
+
+    \item execute(const For\&) - 
+          исполняет оператор цикла \emph{For}.
+
+    \item execute(const While\&) -
+          исполняет оператор цикла \emph{While}.
+
+    \item execute(const Assign\&) - 
+          исполняет оператор \emph{Let}.
+
+    \item execute(const Input\&) -
+          исполняет оператор \emph{Input}.
+
+    \item execute(const Print\&) - 
+          исполняет оператор \emph{Print}.
+\end{itemize}

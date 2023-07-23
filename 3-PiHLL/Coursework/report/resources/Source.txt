@@ -1,0 +1,2237 @@
+// Core.h
+
+#include <string>
+
+class Core {
+public:
+    static void run(const std::string& directory);
+
+private:
+    static void run_program(std::string&& program);
+};
+
+// Core.cpp
+
+#include "Core.h"
+#include "Lexer.h"
+#include "Parser.h"
+#include "Monitor.h"
+#include "Interpreter.h"
+
+#include <fstream>
+#include <iostream>
+
+void Core::run(const std::string &directory){
+    std::ifstream istream(directory);
+
+    if(!istream.is_open()){
+        std::cerr << "Error: unknown directory `" 
+                  << directory << "`" << std::endl;
+        std::exit(65);
+    }
+
+    std::string source((std::istreambuf_iterator<char>(istream)),
+                       std::istreambuf_iterator<char>());
+    istream.close();
+
+    run_program(std::move(source));
+}
+
+void Core::run_program(std::string&& program){
+    Source source(program);
+
+    Monitor monitor(source, [&]{
+        Lexer lexer;
+        Lexemas lexemas = lexer.tokenize(source.begin());
+
+        Parser parser;
+        Statements statements = parser.parse(lexemas.begin());
+
+        Interpreter interpreter;
+        interpreter.execute(statements);
+    });
+
+    monitor.run();
+}
+
+// Monitor.h
+
+#include <functional>
+
+class Monitor {
+public:
+    using process_t = std::function<void(void)>;
+
+    Monitor(Source& source, process_t process);
+    void run();
+
+private:
+    process_t m_process;
+    Source& m_source;
+
+    void indicate(std::size_t row, std::size_t pos, 
+                  const std::string& message);
+
+    void underline(std::size_t row, std::size_t pos1, std::size_t pos2, 
+                  const std::string& message);
+};
+
+// Monitor.cpp
+
+#include "Monitor.h"
+#include <iostream>
+#include <iomanip>
+
+Monitor::Monitor(Source &source, process_t process)
+              : m_process(std::move(process)), m_source(source){}
+
+void Monitor::run(){
+    try{
+        std::invoke(m_process);
+        return;
+    }
+    catch(UnknownSymbolError& error){
+        std::stringstream ss;
+
+        ss << "Syntax error: unknown symbol `"
+           << error.get_symbol()
+           << "` at "
+           << std::setw(2) << error.get_row()
+           << ':'
+           << std::setw(2) << error.get_pos();
+
+        indicate(error.get_row(), error.get_pos(), ss.str());
+    }
+    catch(UnterminatedStringError& error){
+        std::stringstream ss;
+
+        ss << "Syntax error: unterminated string at "
+           << std::setw(2) << error.get_row()
+           << ':'
+           << std::setw(2) << error.get_pos();
+
+        indicate(error.get_row(), error.get_pos(), ss.str());
+    }
+    catch(UnexpectedLexemeError& error){
+        std::stringstream ss;
+
+        auto expected = error.get_expected();
+        auto unexpected = error.get_unexpected();
+
+        if(expected != Lexeme::Unknown){
+            ss << "Syntax error: expected `"
+               << to_string_view(expected) << "` but `"
+               << to_string_view(unexpected) << "` provided at "
+               << std::setw(2) << error.get_row()
+               << ':'
+               << std::setw(2) << error.get_pos();
+
+            indicate(error.get_row(), error.get_pos(), ss.str());
+        }
+    }
+    catch(WrongExprTypeError& error){
+        std::stringstream ss;
+
+        Lexeme first = error.get_first();
+        Lexeme last = error.get_last();
+
+        auto row = first.get_row();
+        auto a = first.get_pos();
+        auto b = last.get_pos() + last.get_view().length();
+
+        ss << "Type error: expected `"
+           << to_string_view(error.get_expected()) << "` expression but `"
+           << to_string_view(error.get_unexpected()) << "` provided at "
+           << std::setw(2) << row
+           << ':'
+           << std::setw(2) << a;
+
+        underline(row, a, b, ss.str());
+    }
+    catch(UnknownUnaryExprError& error){
+        std::stringstream ss;
+
+        auto lexeme = error.get_operation();
+        auto op = lexeme.get_type();
+        auto type = error.get_type();
+
+        ss << "Type error: unknown unary operation `"
+           << to_string_view(op) << "` with type `"
+           << to_string_view(type) << "` at "
+           << std::setw(2) << lexeme.get_row()
+           << ':'
+           << std::setw(2) << lexeme.get_pos();
+
+        indicate(lexeme.get_row(), lexeme.get_pos(), ss.str());
+    }
+    catch(UnknownBinaryExprError& error){
+        std::stringstream ss;
+
+        auto lexeme = error.get_operation();
+        auto left = error.get_left_type();
+        auto right = error.get_right_type();
+        auto op = lexeme.get_type();
+
+        ss << "Type error: unknown binary operation `"
+           << to_string_view(op) << "` with types `"
+           << to_string_view(left) << "` and `"
+           << to_string_view(right) << "` at "
+           << std::setw(2) << lexeme.get_row()
+           << ':'
+           << std::setw(2) << lexeme.get_pos();
+
+        indicate(lexeme.get_row(), lexeme.get_pos(), ss.str());
+    }
+    catch(std::exception& e){
+        std::cerr << "Runtime error: " << e.what() << std::endl;
+    }
+
+    std::exit(64);
+}
+
+void Monitor::indicate(std::size_t row, std::size_t pos, 
+                       const std::string& message){
+    auto line = m_source.get_by_index(row);
+    auto indent = std::string(pos - 1, ' ');
+
+    std::cerr << '\n' << line
+              << indent << "^\n"
+              << indent << message << std::endl;
+}
+
+void Monitor::underline(std::size_t row, 
+                        std::size_t pos1, std::size_t pos2, 
+                        const std::string& message){
+    auto line = m_source.get_by_index(row);
+    auto indent = std::string(pos1 - 1, ' ');
+    auto waves = std::string(pos2 - pos1, '~');
+
+    std::cerr << '\n' << line
+              << indent << waves << '\n'
+              << indent << "^\n"
+              << indent << message << std::endl;
+}
+
+// Error.h
+
+#include <exception>
+#include "Lexeme.h"
+#include "Value.h"
+
+class Error : public std::exception {};
+
+class SyntaxError : public Error {
+public:
+    SyntaxError(std::size_t row, std::size_t pos);
+    std::size_t get_row() const;
+    std::size_t get_pos() const;
+
+private:
+    std::size_t m_row;
+    std::size_t m_pos;
+};
+
+class UnknownSymbolError : public SyntaxError {
+public:
+    UnknownSymbolError(std::size_t row, std::size_t pos, char symbol);
+    char get_symbol() const;
+
+private:
+    char m_symbol;
+};
+
+class UnterminatedStringError : public SyntaxError {
+public:
+    UnterminatedStringError(std::size_t row, std::size_t pos);
+};
+
+class UnexpectedLexemeError : public SyntaxError {
+public:
+    UnexpectedLexemeError(Lexeme unexpected, 
+                          Lexeme::Type expected = Lexeme::Unknown);
+    
+    Lexeme::Type get_expected() const;
+    Lexeme::Type get_unexpected() const;
+
+private:
+    Lexeme::Type m_expected;
+    Lexeme::Type m_unexpected;
+};
+
+class TypeError : public Error {};
+
+class WrongExprTypeError : public TypeError {
+public:
+    WrongExprTypeError(Lexeme first, Lexeme last, 
+                       Value::Type unexpected, Value::Type expected);
+
+    Lexeme get_first() const;
+    Lexeme get_last() const;
+    Value::Type get_expected() const;
+    Value::Type get_unexpected() const;
+
+private:
+    Lexeme m_first, m_last;
+    Value::Type m_expected, m_unexpected;
+};
+
+class UnknownUnaryExprError : public TypeError {
+public:
+    UnknownUnaryExprError(Lexeme op, Value::Type type);
+    Lexeme get_operation() const;
+    Value::Type get_type() const;
+
+private:
+    Lexeme m_op;
+    Value::Type m_type;
+};
+
+class UnknownBinaryExprError : public TypeError {
+public:
+    UnknownBinaryExprError(Lexeme op, Value::Type left, Value::Type right);
+    Lexeme get_operation() const;
+    Value::Type get_left_type() const;
+    Value::Type get_right_type() const;
+
+private:
+    Lexeme m_op;
+    Value::Type m_left, m_right;
+};
+
+// Error.cpp
+
+#include "Error.h"
+
+SyntaxError::SyntaxError(std::size_t row, std::size_t pos){
+    m_row = row;
+    m_pos = pos;
+}
+
+std::size_t SyntaxError::get_row() const {
+    return m_row;
+}
+
+std::size_t SyntaxError::get_pos() const {
+    return m_pos;
+}
+
+UnknownSymbolError::UnknownSymbolError(
+                  std::size_t row, std::size_t pos, char symbol)
+                  : SyntaxError(row, pos), m_symbol(symbol){}
+
+char UnknownSymbolError::get_symbol() const {
+    return m_symbol;
+}
+
+UnterminatedStringError::UnterminatedStringError(
+    std::size_t row, std::size_t pos)
+    : SyntaxError(row, pos){}
+
+UnexpectedLexemeError::UnexpectedLexemeError(
+    Lexeme unexpected, Lexeme::Type expected)
+    : SyntaxError(unexpected.get_row(), unexpected.get_pos()),
+    m_expected(expected),
+    m_unexpected(unexpected.get_type()){}
+
+Lexeme::Type UnexpectedLexemeError::get_expected() const {
+    return m_expected;
+}
+
+Lexeme::Type UnexpectedLexemeError::get_unexpected() const {
+    return m_unexpected;
+}
+
+WrongExprTypeError::WrongExprTypeError(Lexeme first, Lexeme last, 
+    Value::Type unexpected, Value::Type expected){
+    m_first = first;
+    m_last = last;
+    m_unexpected = unexpected;
+    m_expected= expected;
+}
+
+Lexeme WrongExprTypeError::get_first() const {
+    return m_first;
+}
+
+Lexeme WrongExprTypeError::get_last() const {
+    return m_last;
+}
+
+Value::Type WrongExprTypeError::get_expected() const {
+    return m_expected;
+}
+
+Value::Type WrongExprTypeError::get_unexpected() const {
+    return m_unexpected;
+}
+
+UnknownUnaryExprError::UnknownUnaryExprError(
+    Lexeme op, Value::Type type){
+    m_op = op;
+    m_type = type;
+}
+
+Lexeme UnknownUnaryExprError::get_operation() const {
+    return m_op;
+}
+
+Value::Type UnknownUnaryExprError::get_type() const {
+    return m_type;
+}
+
+UnknownBinaryExprError::UnknownBinaryExprError(
+    Lexeme op, Value::Type left, Value::Type right){
+    m_op = op;
+    m_left = left;
+    m_right = right;
+}
+
+Lexeme UnknownBinaryExprError::get_operation() const {
+    return m_op;
+}
+
+Value::Type UnknownBinaryExprError::get_left_type() const {
+    return m_left;
+}
+
+Value::Type UnknownBinaryExprError::get_right_type() const {
+    return m_right;
+}
+
+// Source.h
+
+#include <string>
+#include <vector>
+#include <ostream>
+
+class Line;
+
+class Source {
+public:
+    class iterator;
+
+    Source(std::string text);
+
+    iterator begin();
+    iterator end();
+
+    Line get_by_index(std::size_t index) const;
+
+private:
+    std::string m_text;
+    std::vector<Line> m_content;
+};
+
+class Line {
+public:
+    friend std::ostream& operator<<(std::ostream& ostream, 
+                                    const Line& line);
+
+private:
+    friend class Source;
+    Line(const char* pointer);
+    const char* const m_pointer;
+};
+
+class Source::iterator {
+public:
+    iterator();
+
+    const char& operator*() const;
+    iterator& operator++();
+    iterator operator++(int);
+
+    bool operator!=(const iterator& other) const;
+    bool operator==(const iterator& other) const;
+
+    const char* get_ptr() const;
+    std::size_t get_row() const;
+    std::size_t get_pos() const;
+
+private:
+    friend class Source;
+    iterator(const char* pointer);
+
+    const char* m_cur;
+    std::size_t m_row;
+    std::size_t m_pos;
+};
+
+// Source.cpp
+
+#include <stdexcept>
+#include "Source.h"
+
+Source::Source(std::string text){
+    bool ignore_case = true;
+    m_content.push_back(&text.front());
+
+    for(auto &curr : text){
+        switch(curr){
+            case '\n':
+                m_content.push_back(&curr + 1);
+                ignore_case = true;
+                break;
+
+            case '\"':
+                ignore_case = not ignore_case;
+                break;
+
+            default:
+                if(ignore_case){
+                    curr = static_cast<char>(std::toupper(curr));
+                }
+        }
+    }
+
+    m_text = std::move(text);
+}
+
+Source::iterator Source::begin(){
+    return {m_text.data()};
+}
+
+Source::iterator Source::end(){
+    return {m_text.data() + m_text.size()};
+}
+
+Line Source::get_by_index(std::size_t index) const {
+    try{
+        return m_content.at(index - 1);
+    }
+    catch(...){
+        throw std::out_of_range(
+        "Runtime error: no line with index " + std::to_string(index));
+    }
+}
+
+Line::Line(const char *pointer) : m_pointer(pointer){}
+
+std::ostream &operator<<(std::ostream &ostream, const Line& line){
+    auto curr = line.m_pointer;
+
+    while(!(*curr == '\n' || *curr == '\0')){
+        ostream << *curr;
+        ++curr;
+    }
+
+    ostream << std::endl;
+    return ostream;
+}
+
+Source::iterator::iterator(){
+    m_cur = nullptr;
+    m_row = 1;
+    m_pos = 1;
+}
+
+Source::iterator::iterator(const char* pointer){
+    m_cur = pointer;
+    m_row = 1;
+    m_pos = 1;
+}
+
+const char& Source::iterator::operator*() const{
+    return *m_cur;
+}
+
+Source::iterator& Source::iterator::operator++(){
+    switch(*m_cur){
+        case '\0':
+            return *this;
+
+        case '\n':
+            ++m_cur;
+            ++m_row;
+            m_pos = 1;
+            return *this;
+
+        default:
+            ++m_cur;
+            ++m_pos;
+            return *this;
+    }
+}
+
+Source::iterator Source::iterator::operator++(int){
+    iterator temp = *this;
+    ++(*this);
+    return temp;
+}
+
+bool Source::iterator::operator!=(const iterator &other) const {
+    return m_cur != other.m_cur;
+}
+
+bool Source::iterator::operator==(const iterator &other) const {
+    return m_cur == other.m_cur;
+}
+
+const char *Source::iterator::get_ptr() const {
+    return m_cur;
+}
+
+std::size_t Source::iterator::get_row() const {
+    return m_row;
+}
+
+std::size_t Source::iterator::get_pos() const {
+    return m_pos;
+}
+
+// Lexeme.h
+
+#include <cstdint>
+#include <string_view>
+
+class Lexeme {
+public:
+    enum Type : uint8_t {
+        Floating, Integer, String, Ident, Unknown,
+        Comma, Colon, Semicolon,
+        Equals, NotEquals, Less, LessEquals, 
+        Greater, GreaterEquals,
+        OpenParen, CloseParen,
+        Plus, Minus, Asterisk, Slash,
+        And, Or, Not,
+        Let,
+        Input, Print,
+        Goto,
+        If, Then, Else, Endif,
+        For, To, Step, Next,
+        While, Wend,
+        Eol,
+        Eof,
+    };
+
+    Lexeme();
+    Lexeme(Type type, std::string_view view, 
+           std::size_t row, std::size_t pos);
+
+    Type get_type() const;
+    bool has_type(Type type) const;
+
+    std::string_view get_view() const;
+    std::size_t get_row() const;
+    std::size_t get_pos() const;
+
+private:
+    Type m_type;
+    std::string_view m_view;
+    std::size_t m_row{};
+    std::size_t m_pos{};
+};
+
+Lexeme::Type to_lexeme_type(std::string_view view);
+
+std::string_view to_string_view(Lexeme::Type type);
+
+// Lexeme.cpp
+
+#include "Lexeme.h"
+#include <unordered_map>
+
+Lexeme::Lexeme(){
+    m_type = Lexeme::Unknown;
+    m_row = -1;
+    m_pos = -1;
+}
+
+Lexeme::Lexeme(Lexeme::Type type, std::string_view view, 
+              std::size_t row, std::size_t pos){
+    m_type = type;
+    m_view = view;
+    m_row = row;
+    m_pos = pos;
+}
+
+Lexeme::Type Lexeme::get_type() const {
+    return m_type;
+}
+
+bool Lexeme::has_type(Type type) const {
+    return m_type == type;
+}
+
+std::string_view Lexeme::get_view() const {
+    return m_view;
+}
+
+std::size_t Lexeme::get_row() const {
+    return m_row;
+}
+
+std::size_t Lexeme::get_pos() const {
+    return m_pos;
+}
+
+Lexeme::Type to_lexeme_type(std::string_view view){
+    static std::unordered_map<std::string_view, Lexeme::Type> conversion = {
+    {"AND",   Lexeme::And}, {"OR", Lexeme::Or}, {"NOT", Lexeme::Not},
+    {"LET",   Lexeme::Let},
+    {"INPUT", Lexeme::Input}, {"PRINT", Lexeme::Print},
+    {"GOTO",  Lexeme::Goto},
+    {"IF",    Lexeme::If}, {"THEN", Lexeme::Then}, {"ELSE", Lexeme::Else}, 
+    {"ENDIF", Lexeme::Endif},
+    {"FOR",   Lexeme::For}, {"TO", Lexeme::To}, {"STEP", Lexeme::Step}, 
+    {"NEXT", Lexeme::Next},
+    {"WHILE", Lexeme::While}, {"WEND", Lexeme::Wend},
+    };
+
+    auto it = conversion.find(view);
+    return it == conversion.end() ? Lexeme::Ident : it->second;
+}
+
+std::string_view to_string_view(Lexeme::Type type){
+    static const char* const conversion[] = {
+    "Floating", "Integer", "String", "Ident", "Unknown",
+    "Comma", "Colon", "Semicolon",
+    "Equals", "NotEquals", "Less", "LessEquals", "Greater", "GreaterEquals",
+    "OpenParen", "CloseParen",
+    "Plus", "Minus", "Asterisk", "Slash",
+    "And", "Or", "Not",
+    "Let",
+    "Input", "Print",
+    "Goto",
+    "If", "Then", "Else", "EndIf",
+    "For", "To", "Step", "Next",
+    "While", "Wend",
+    "Eol",
+    "Eof",
+    };
+
+    return conversion[type];
+}
+// Lexer.h
+
+#include "Source.h"
+#include "Lexeme.h"
+#include <vector>
+
+using Lexemas = std::vector<Lexeme>;
+
+class Lexer {
+public:
+    Lexer() = default;
+    Lexemas tokenize(Source::iterator source);
+
+private:
+    Source::iterator m_curr;
+    Source::iterator m_prev;
+
+    bool match(char required);
+
+    Lexeme next();
+    Lexeme make(Lexeme::Type type);
+
+    Lexeme::Type read_lexeme();
+    Lexeme::Type read_number();
+    Lexeme::Type read_string();
+    Lexeme::Type read_unique();
+};
+
+namespace Character
+{
+    bool is_digit(char c);
+    bool is_alpha(char c);
+    bool is_space(char c);
+    bool is_ident(char c);
+}
+
+// Lexer.cpp
+
+#include "Lexer.h"
+#include "Error.h"
+
+bool Character::is_alpha(char c){
+    return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z';
+}
+
+bool Character::is_digit(char c){
+    return c >= '0' && c <= '9';
+}
+
+bool Character::is_space(char c){
+    return c == ' ' || c == '\t' || c == '\r';
+}
+
+bool Character::is_ident(char c){
+    return c == '_' || is_alpha(c) || is_digit(c);
+}
+
+Lexemas Lexer::tokenize(Source::Iterator source){
+    m_curr = source;
+    Lexemas lexemas;
+
+    do{
+        Lexeme lexeme = next();
+        lexemas.push_back(lexeme);
+
+        if(lexeme.has_type(Lexeme::Eof)){
+            break;
+        }
+    }
+    while(true);
+
+    return std::move(lexemas);
+}
+
+Lexeme Lexer::next(){
+    do{
+        while(Character::is_space(*m_curr)){
+            m_curr++;
+        }
+
+        if(*m_curr == '\''){
+            while(!(*m_curr == '\n' || *m_curr == '\0')) {
+                m_curr++;
+            }
+        }
+        else{
+            break;
+        }
+    }
+    while(true);
+
+    m_prev = m_curr;
+    return make(read_lexeme());
+}
+
+Lexeme Lexer::make(Lexeme::Type type){
+    return {
+        type,
+        std::string_view(m_prev.get_ptr(), m_curr.get_ptr()),
+        m_prev.get_row(),
+        m_prev.get_pos(),
+    };
+}
+
+bool Lexer::match(char required){
+    if(*m_curr == required){
+        m_curr++;
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+Lexeme::Type Lexer::read_lexeme(){
+    char peek = *m_curr++;
+
+    switch(peek){
+        case '\n': return Lexeme::Eol;
+        case '\0': return Lexeme::Eof;
+
+        case ',': return Lexeme::Comma;
+        case ':': return Lexeme::Colon;
+        case ';': return Lexeme::Semicolon;
+
+        case '+': return Lexeme::Plus;
+        case '-': return Lexeme::Minus;
+        case '*': return Lexeme::Asterisk;
+        case '/': return Lexeme::Slash;
+
+        case '(': return Lexeme::OpenParen;
+        case ')': return Lexeme::CloseParen;
+
+        case '=': return Lexeme::Equals;
+        case '>': return match('=') ? Lexeme::GreaterEquals : 
+                                      Lexeme::Greater;
+        case '<': return match('>') ? Lexeme::NotEquals :
+                         match('=') ? Lexeme::LessEquals : Lexeme::Less;
+
+        default: break;
+    }
+
+    if(peek == '"'){
+        return read_string();
+    }
+
+    if(Character::is_digit(peek)){
+        return read_number();
+    }
+
+    if(Character::is_ident(peek)){
+        return read_unique();
+    }
+
+    throw UnknownSymbolError(m_prev.get_row(), m_prev.get_pos(), *m_prev);
+}
+
+Lexeme::Type Lexer::read_number(){
+    while(Character::is_digit(*m_curr)){
+        m_curr++;
+    }
+
+    if(match('.')){
+        while(Character::is_digit(*m_curr)){
+            m_curr++;
+        }
+
+        return Lexeme::Floating;
+    }
+
+    return Lexeme::Integer;
+}
+
+Lexeme::Type Lexer::read_string(){
+    while(true){
+        if(*m_curr == '\n' || *m_curr == '\0'){
+            throw UnterminatedStringError(m_prev.get_row(), 
+                                          m_prev.get_pos());
+        }
+
+        if(*m_curr++ == '"'){
+            break;
+        }
+    }
+
+    return Lexeme::String;
+}
+
+Lexeme::Type Lexer::read_unique(){
+    while(Character::is_ident(*m_curr)){
+        m_curr++;
+    }
+
+    return to_lexeme_type({m_prev.get_ptr(), m_curr.get_ptr()});
+}
+
+// Convert.h
+
+#include "Lexeme.h"
+#include <string>
+
+namespace Convert {
+    double to_numeric(Lexeme lexeme);
+    std::string to_ident(Lexeme lexeme);
+    std::string to_string(Lexeme lexeme);
+}
+
+// Convert.cpp
+
+#include "Convert.h"
+#include <charconv>
+
+double Convert::to_numeric(Lexeme lexeme){
+    auto view = lexeme.get_view();
+    double temp;
+    std::from_chars(view.begin(), view.end(), temp);
+    return temp;
+}
+
+std::string Convert::to_ident(Lexeme lexeme){
+    auto view = lexeme.get_view();
+    return std::string(view);
+}
+
+std::string Convert::to_string(Lexeme lexeme){
+    auto view = lexeme.get_view();
+    return {std::next(view.begin()), std::prev(view.end())};
+}
+
+// Expression.h
+
+#include "Lexeme.h"
+#include <memory>
+#include <vector>
+
+class Expression {
+public:
+    enum class Type : uint8_t {
+        Unary,
+        Binary,
+        Numeric, String, Ident,
+    };
+
+    Expression(Type type);
+    Type type() const;
+
+private:
+    Type m_type;
+};
+
+using Expression_ptr = std::unique_ptr<Expression>;
+
+class Expressions {
+public:
+    class iterator;
+    void push_back(Expression_ptr expression);
+
+    iterator begin() const;
+    iterator end() const;
+
+private:
+    using container_t = std::vector<Expression_ptr>;
+    container_t m_container;
+};
+
+class Expressions::iterator {
+public:
+    iterator() = default;
+
+    const Expression& operator*() const;
+    iterator& operator++();
+
+    bool operator==(const iterator& other) const;
+    bool operator!=(const iterator& other) const;
+
+private:
+    friend class Expressions;
+    iterator(container_t::pointer pointer);
+
+    container_t ::pointer m_pointer;
+};
+
+class Unary : public Expression {
+public:
+    Unary(Lexeme::Type op, Expression_ptr expr);
+    Lexeme::Type operation() const;
+    const Expression& expression() const;
+
+private:
+    Lexeme::Type m_op;
+    Expression_ptr m_expr;
+};
+
+class Binary : public Expression {
+public:
+    Binary(Lexeme::Type op, Expression_ptr left, Expression_ptr right);
+    Lexeme::Type operation() const;
+    const Expression& left() const;
+    const Expression& right() const;
+
+private:
+    Lexeme::Type m_op;
+    Expression_ptr m_left, m_right;
+};
+
+class Numeric : public Expression {
+public:
+    Numeric(double value);
+    double value() const;
+
+private:
+    double m_value;
+};
+
+class String : public Expression {
+public:
+    String(std::string&& value);
+    const std::string& value() const;
+
+private:
+    std::string m_value;
+};
+
+class Ident : public Expression {
+public:
+    Ident(std::string&& name);
+    const std::string& name() const;
+
+private:
+    std::string m_name;
+};
+
+// Expression.cpp
+
+#include "Expression.h"
+
+Expression::Expression(Type type){
+    m_type = type;
+}
+
+Expression::Type Expression::type() const {
+    return m_type;
+}
+
+void Expressions::push_back(Expression_ptr expression){
+    m_container.emplace_back(std::move(expression));
+}
+
+Expressions::iterator Expressions::begin() const {
+    auto ptr = const_cast<container_t::pointer>(m_container.data());
+    return {ptr};
+}
+
+Expressions::iterator Expressions::end() const {
+    auto ptr = const_cast<container_t::pointer>(m_container.data() + 
+                                                m_container.size());
+    return {ptr};
+}
+
+Expressions::iterator::iterator(container_t::pointer pointer){
+    m_pointer = pointer;
+}
+
+const Expression &Expressions::iterator::operator*() const {
+    return **m_pointer;
+}
+
+Expressions::iterator &Expressions::iterator::operator++(){
+    ++m_pointer;
+    return *this;
+}
+
+bool Expressions::iterator::operator==(const iterator &other) const {
+    return m_pointer == other.m_pointer;
+}
+
+bool Expressions::iterator::operator!=(const iterator &other) const {
+    return m_pointer != other.m_pointer;
+}
+
+Unary::Unary(Lexeme::Type op, Expression_ptr expr) 
+     : Expression(Type::Unary){
+    m_op = op;
+    m_expr = std::move(expr);
+}
+
+Lexeme::Type Unary::operation() const {
+    return m_op;
+}
+
+const Expression &Unary::expression() const {
+    return *m_expr;
+}
+
+Binary::Binary(Lexeme::Type op, Expression_ptr left, Expression_ptr right) 
+      : Expression(Type::Binary){
+    m_op = op;
+    m_left = std::move(left);
+    m_right = std::move(right);
+}
+
+Lexeme::Type Binary::operation() const {
+    return m_op;
+}
+
+const Expression &Binary::left() const {
+    return *m_left;
+}
+
+const Expression &Binary::right() const {
+    return *m_right;
+}
+
+Numeric::Numeric(double value) 
+       : Expression(Type::Numeric){
+    m_value = value;
+}
+
+double Numeric::value() const {
+    return m_value;
+}
+
+String::String(std::string&& value) 
+      : Expression(Type::String){
+    m_value = std::move(value);
+}
+
+const std::string &String::value() const {
+    return m_value;
+}
+
+Ident::Ident(std::string &&name) 
+     : Expression(Type::Ident){
+    m_name = std::move(name);
+}
+
+const std::string &Ident::name() const {
+    return m_name;
+}
+
+// Statement.h
+
+#include <cstdint>
+#include <vector>
+#include <memory>
+#include "Expression.h"
+
+class Statement {
+public:
+    enum class Type : uint8_t {
+        Assign,
+        If, For, While,
+        Input, Print,
+    };
+
+    Statement(Type type);
+    Type type() const;
+
+private:
+    Type m_type;
+};
+
+using Statement_ptr = std::unique_ptr<Statement>;
+
+class Statements {
+public:
+    class iterator;
+
+    void push_back(Statement_ptr statement);
+
+    iterator begin() const;
+    iterator end() const;
+
+private:
+    using container_t = std::vector<Statement_ptr>;
+    container_t m_container;
+};
+
+class Statements::iterator {
+public:
+    iterator() = default;
+
+    const Statement& operator*() const;
+    iterator& operator++();
+
+    bool operator==(const iterator& other) const;
+    bool operator!=(const iterator& other) const;
+
+private:
+    friend class Statements;
+    iterator(container_t::pointer pointer);
+
+    container_t::pointer m_pointer;
+};
+
+class Assign : public Statement {
+public:
+    Assign(std::string&& ident, std::unique_ptr<Expression> expr);
+    const std::string& ident() const;
+    const Expression& expression() const;
+
+private:
+    std::string m_ident;
+    std::unique_ptr<Expression> m_expr;
+};
+
+class If : public Statement {
+public:
+    If(std::unique_ptr<Expression> condition, Statements if_branch);
+    If(std::unique_ptr<Expression> condition, Statements if_branch, 
+       Statements else_branch);
+    const Expression& condition() const;
+    const Statements& if_branch() const;
+    const Statements& else_branch() const;
+
+private:
+    std::unique_ptr<Expression> m_condition;
+    Statements m_if_branch, m_else_branch;
+};
+
+class For : public Statement {
+public:
+    For(std::string&& ident, Expression_ptr start, Expression_ptr end, 
+        Statements statements);
+    const std::string& ident() const;
+    const Expression& start() const;
+    const Expression& end() const;
+    const Statements& body() const;
+
+private:
+    std::string m_ident;
+    Expression_ptr m_start, m_end;
+    Statements m_body;
+};
+
+class While : public Statement {
+public:
+    While(std::unique_ptr<Expression> condition, Statements body);
+    const Expression& condition() const;
+    const Statements& body() const;
+
+private:
+    std::unique_ptr<Expression> m_condition;
+    Statements m_body;
+};
+
+class Input : public Statement {
+public:
+    Input(std::string&& ident);
+    Input(std::string&& message, std::string&& ident);
+    const std::string& ident() const;
+    const std::string& message() const;
+
+private:
+    std::string m_ident, m_message;
+};
+
+class Print : public Statement {
+public:
+    Print(Expressions params);
+    const Expressions& params() const;
+
+private:
+    Expressions m_params;
+};
+
+// Statement.cpp
+
+#include "Statement.h"
+
+Statement::Statement(Type type){
+    m_type = type;
+}
+
+Statement::Type Statement::type() const {
+    return m_type;
+}
+
+void Statements::push_back(Statement_ptr statement){
+    m_container.emplace_back(std::move(statement));
+}
+
+Statements::iterator Statements::begin() const {
+    auto ptr = const_cast<container_t::pointer>(m_container.data());
+    return {ptr};
+}
+
+Statements::iterator Statements::end() const {
+    auto ptr = const_cast<container_t::pointer>(m_container.data() + 
+                                                m_container.size());
+    return {ptr};
+}
+
+Statements::iterator::iterator(container_t::pointer pointer){
+    m_pointer = pointer;
+}
+
+const Statement &Statements::iterator::operator*() const {
+    return **m_pointer;
+}
+
+Statements::iterator &Statements::iterator::operator++(){
+    ++m_pointer;
+    return *this;
+}
+
+bool Statements::iterator::operator==(const iterator &other) const {
+    return m_pointer == other.m_pointer;
+}
+
+bool Statements::iterator::operator!=(const iterator &other) const {
+    return m_pointer != other.m_pointer;
+}
+
+Assign::Assign(std::string&& ident, std::unique_ptr<Expression> expr) 
+      : Statement(Type::Assign){
+    m_ident = std::move(ident);
+    m_expr = std::move(expr);
+}
+
+const std::string& Assign::ident() const {
+    return m_ident;
+}
+
+const Expression &Assign::expression() const {
+    return *m_expr;
+}
+
+If::If(std::unique_ptr<Expression> condition, Statements if_branch) 
+    : Statement(Type::If){
+    m_condition = std::move(condition);
+    m_if_branch = std::move(if_branch);
+}
+
+If::If(std::unique_ptr<Expression> condition, Statements if_branch, 
+    Statements else_branch) 
+    : Statement(Type::If){
+    m_condition = std::move(condition);
+    m_if_branch = std::move(if_branch);
+    m_else_branch = std::move(else_branch);
+}
+
+const Expression &If::condition() const {
+    return *m_condition;
+}
+
+const Statements &If::if_branch() const {
+    return m_if_branch;
+}
+
+const Statements &If::else_branch() const {
+    return m_else_branch;
+}
+
+For::For(std::string&& ident, Expression_ptr start, Expression_ptr end, 
+    Statements body) 
+    : Statement(Type::For){
+    m_ident = std::move(ident);
+    m_start = std::move(start);
+    m_end = std::move(end);
+    m_body = std::move(body);
+}
+
+const std::string &For::ident() const {
+    return m_ident;
+}
+
+const Expression &For::start() const {
+    return *m_start;
+}
+
+const Expression &For::end() const {
+    return *m_end;
+}
+
+const Statements &For::body() const {
+    return m_body;
+}
+
+While::While(std::unique_ptr<Expression> condition, Statements body) 
+    : Statement(Type::While){
+    m_condition = std::move(condition);
+    m_body = std::move(body);
+}
+
+const Expression &While::condition() const {
+    return *m_condition;
+}
+
+const Statements &While::body() const {
+    return m_body;
+}
+
+Input::Input(std::string&& ident) : Statement(Type::Input){
+    m_ident = std::move(ident);
+}
+
+Input::Input(std::string&& message, std::string&& ident) 
+    : Statement(Type::Input){
+    m_ident = std::move(ident);
+    m_message = std::move(message);
+}
+
+const std::string& Input::ident() const {
+    return m_ident;
+}
+
+const std::string& Input::message() const {
+    return m_message;
+}
+
+Print::Print(Expressions params) : Statement(Type::Print){
+    m_params = std::move(params);
+}
+
+const Expressions &Print::params() const {
+    return m_params;
+}
+
+// Value.h
+
+#include <cstdint>
+#include <variant>
+#include <string>
+
+class Value {
+public:
+    enum Type : uint8_t {
+        Numeric, Boolean, Literal,
+    };
+
+    Value(bool v);
+    Value(double v);
+    Value(std::string v);
+
+    Type get_type() const;
+
+    bool to_boolean() const;
+    double to_numeric() const;
+    const std::string& to_literal() const;
+
+private:
+    Type m_type;
+    std::variant<bool, double, std::string> m_content;
+};
+
+std::string_view to_string_view(Value::Type type);
+
+// Value.cpp
+
+#include "Value.h"
+
+Value::Value(bool v){
+    m_type = Type::Boolean;
+    m_content = v;
+}
+
+Value::Value(double v){
+    m_type = Type::Numeric;
+    m_content = v;
+}
+
+Value::Value(std::string v){
+    m_type = Type::Literal;
+    m_content = std::move(v);
+}
+
+Value::Type Value::get_type() const {
+    return m_type;
+}
+
+bool Value::to_boolean() const {
+    return std::get<bool>(m_content);
+}
+
+double Value::to_numeric() const {
+    return std::get<double>(m_content);
+}
+
+const std::string &Value::to_literal() const {
+    return std::get<std::string>(m_content);
+}
+
+std::string_view to_string_view(Value::Type type){
+    static const char* const conversion[] = {
+        "Numeric", "Boolean", "Literal",
+    };
+
+    return conversion[type];
+}
+
+// Constexpr.h
+
+#include "Expression.h"
+#include "Value.h"
+#include "Error.h"
+
+class Constexpr {
+public:
+    static Constexpr build(Lexeme lexeme);
+    static Constexpr build(Lexeme lexeme, Constexpr a);
+    static Constexpr build(Lexeme lexeme, Constexpr a, Constexpr b);
+
+    Expression_ptr get_expression();
+    Value::Type get_type() const;
+
+private:
+    Constexpr(Expression_ptr expr, Value::Type type);
+    Constexpr(Lexeme::Type op, Constexpr a, Value::Type type);
+    Constexpr(Lexeme::Type op, Constexpr a, Constexpr b, Value::Type type);
+
+    Expression_ptr m_expr;
+    Value::Type m_type;
+};
+
+// Constexpr.cpp
+
+#include "Constexpr.h"
+#include "Convert.h"
+
+Expression_ptr Constexpr::get_expression(){
+    return std::move(m_expr);
+}
+
+Value::Type Constexpr::get_type() const {
+    return m_type;
+}
+
+Constexpr::Constexpr(Expression_ptr expr, Value::Type type){
+    m_type = type;
+    m_expr = std::move(expr);
+}
+
+Constexpr::Constexpr(Lexeme::Type op, Constexpr a, Value::Type type){
+    m_type = type;
+    m_expr = std::make_unique<Unary>(op, std::move(a.m_expr));
+}
+
+Constexpr::Constexpr(Lexeme::Type op, Constexpr a, Constexpr b, 
+    Value::Type type){
+    m_type = type;
+    m_expr = std::make_unique<Binary>(op, 
+    std::move(a.m_expr), std::move(b.m_expr));
+}
+
+Constexpr Constexpr::build(Lexeme lexeme){
+    auto type = lexeme.get_type();
+
+    switch(type){
+        case Lexeme::Ident: 
+            return {std::make_unique<Ident>(Convert::to_ident(lexeme)), 
+                    Value::Numeric};
+        case Lexeme::String: 
+            return {std::make_unique<String>(Convert::to_string(lexeme)), 
+                    Value::Literal};
+        case Lexeme::Integer:
+        case Lexeme::Floating: 
+            return {std::make_unique<Numeric>(Convert::to_numeric(lexeme)), 
+                    Value::Numeric};
+        default: break;
+    }
+
+    throw UnexpectedLexemeError(lexeme);
+}
+
+Constexpr Constexpr::build(Lexeme lexeme, Constexpr a){
+    auto vt = a.m_type;
+    auto op = lexeme.get_type();
+
+    if(vt == Value::Numeric){
+        switch(op){
+            case Lexeme::Plus:
+            case Lexeme::Minus: 
+                return {op, std::move(a), Value::Numeric};
+            default: break;
+        }
+    }
+    else if(vt == Value::Boolean){
+        switch(op){
+            case Lexeme::Not: return {op, std::move(a), Value::Boolean};
+            default: break;
+        }
+    }
+
+    throw UnknownUnaryExprError(lexeme, a.m_type);
+}
+
+Constexpr Constexpr::build(Lexeme lexeme, Constexpr a, Constexpr b){
+    auto at = a.m_type;
+    auto bt = b.m_type;
+    auto op = lexeme.get_type();
+
+    if(at == Value::Numeric && bt == Value::Numeric){
+        switch(op){
+            case Lexeme::Plus:
+            case Lexeme::Minus:
+            case Lexeme::Asterisk:
+            case Lexeme::Slash: 
+                return {op, std::move(a), std::move(b), 
+                        Value::Numeric};
+            case Lexeme::Equals:
+            case Lexeme::NotEquals:
+            case Lexeme::Less:
+            case Lexeme::LessEquals:
+            case Lexeme::Greater:
+            case Lexeme::GreaterEquals:
+                return {op, std::move(a), std::move(b), 
+                        Value::Boolean};
+            default: break;
+        }
+    }
+    else if(at == Value::Boolean && bt == Value::Boolean){
+        switch(op){
+            case Lexeme::Or:
+            case Lexeme::And: 
+                return {op, std::move(a), std::move(b), 
+                        Value::Boolean};
+            default: break;
+        }
+    }
+
+    throw UnknownBinaryExprError(lexeme, at, bt);
+}
+
+// Parser.h
+
+#include "Expression.h"
+#include "Statement.h"
+#include "Lexeme.h"
+#include "Constexpr.h"
+
+using Lexemas = std::vector<Lexeme>;
+
+class Parser {
+public:
+    Parser() = default;
+    Statements parse(Lexemas::iterator source);
+
+private:
+    Lexemas::iterator m_current;
+
+    template<typename... Types>
+    bool match(Types... types);
+
+    inline const Lexeme& previous() const;
+    inline const Lexeme& current() const;
+
+    inline void require(Lexeme::Type type);
+
+    void parse_compound(Statements& statements);
+
+    Statement_ptr parse_statement();
+    std::unique_ptr<If> parse_if();
+    std::unique_ptr<For> parse_for();
+    std::unique_ptr<While> parse_while();
+    std::unique_ptr<Assign> parse_assign();
+    std::unique_ptr<Input> parse_input();
+    std::unique_ptr<Print> parse_print();
+
+    Expression_ptr parse_expression(Value::Type type);
+
+    Constexpr expression();
+
+    Constexpr disjunction();
+    Constexpr conjunction();
+
+    Constexpr comparison();
+
+    Constexpr term();
+    Constexpr factor();
+
+    Constexpr unary();
+    Constexpr primary();
+};
+
+// Parser.cpp
+
+#include "Parser.h"
+#include "Convert.h"
+#include "Error.h"
+#include <algorithm>
+#include <memory>
+
+Statements Parser::parse(Lexemas::iterator source){
+    m_current = source;
+
+    Statements stmts;
+    parse_compound(stmts);
+    require(Lexeme::Eof);
+
+    return stmts;
+}
+
+template<typename ...Types>
+bool Parser::match(Types... types){
+    auto unpack = {types...};
+    auto search = m_current->get_type();
+
+    if(std::ranges::any_of(unpack, 
+        [search](auto type){ return type == search; })){
+        ++m_current;
+        return true;
+    }
+
+    return false;
+}
+
+const Lexeme &Parser::previous() const {
+    return *(m_current - 1);
+}
+
+const Lexeme &Parser::current() const {
+    return *m_current;
+}
+
+void Parser::require(Lexeme::Type type){
+    if(!match(type)){
+        throw UnexpectedLexemeError(*m_current, type);
+    }
+}
+
+void Parser::parse_compound(Statements& statements){
+    Statement_ptr stmt;
+    do{
+        while(match(Lexeme::Eol));
+
+        stmt = parse_statement();
+
+        if(stmt){
+            statements.push_back(std::move(stmt));
+            require(Lexeme::Eol);
+        }
+        else break;
+    }
+    while(true);
+}
+
+Statement_ptr Parser::parse_statement(){
+    auto type = m_current->get_type();
+
+    switch(type){
+        case Lexeme::If: return parse_if();
+        case Lexeme::For: return parse_for();
+        case Lexeme::While: return parse_while();
+
+        case Lexeme::Let:
+        case Lexeme::Ident: return parse_assign();
+
+        case Lexeme::Input: return parse_input();
+        case Lexeme::Print: return parse_print();
+
+        default: return nullptr;
+    }
+}
+
+std::unique_ptr<If> Parser::parse_if(){
+    require(Lexeme::If);
+    auto expr = parse_expression(Value::Boolean);
+
+    require(Lexeme::Then);
+    Statements if_branch, else_branch;
+
+    if(match(Lexeme::Eol)){
+        parse_compound(if_branch);
+
+        if(match(Lexeme::Else)){
+            parse_compound(else_branch);
+        }
+
+        require(Lexeme::Endif);
+    }
+    else{
+        Statement_ptr stmt = parse_statement();
+        if_branch.push_back(std::move(stmt));
+    }
+
+    return std::make_unique<If>(std::move(expr), 
+    std::move(if_branch), std::move(else_branch));
+}
+
+std::unique_ptr<For> Parser::parse_for(){
+    require(Lexeme::For);
+
+    require(Lexeme::Ident);
+    auto ident = Convert::to_ident(previous());
+
+    require(Lexeme::Equals);
+    auto start = parse_expression(Value::Numeric);
+
+    require(Lexeme::To);
+    auto end = parse_expression(Value::Numeric);
+
+    require(Lexeme::Eol);
+    Statements body;
+    parse_compound(body);
+
+    require(Lexeme::Next);
+
+    return std::make_unique<For>(std::move(ident), 
+    std::move(start), std::move(end), std::move(body));
+}
+
+std::unique_ptr<While> Parser::parse_while(){
+    require(Lexeme::While);
+    auto expr = parse_expression(Value::Boolean);
+
+    require(Lexeme::Eol);
+    Statements body;
+    parse_compound(body);
+
+    require(Lexeme::Wend);
+
+    return std::make_unique<While>(std::move(expr), std::move(body));
+}
+
+std::unique_ptr<Assign> Parser::parse_assign(){
+    match(Lexeme::Let);
+    require(Lexeme::Ident);
+    auto ident = Convert::to_ident(previous());
+
+    require(Lexeme::Equals);
+    auto expr = parse_expression(Value::Numeric);
+
+    return std::make_unique<Assign>(std::move(ident), std::move(expr));
+}
+
+std::unique_ptr<Input> Parser::parse_input(){
+    require(Lexeme::Input);
+    std::string message, ident;
+
+    if(match(Lexeme::String)){
+        message = Convert::to_string(previous());
+        require(Lexeme::Comma);
+    }
+
+    require(Lexeme::Ident);
+    ident = Convert::to_ident(previous());
+
+    return std::make_unique<Input>(std::move(message), std::move(ident));
+}
+
+std::unique_ptr<Print> Parser::parse_print(){
+    require(Lexeme::Print);
+    Expressions params;
+
+    do{
+        auto cexpr = expression();
+        auto expr = cexpr.get_expression();
+        params.push_back(std::move(expr));
+    }
+    while(match(Lexeme::Semicolon));
+
+    return std::make_unique<Print>(std::move(params));
+}
+
+Expression_ptr Parser::parse_expression(Value::Type type){
+    auto first = current();
+
+    auto cexpr = expression();
+    auto ctype = cexpr.get_type();
+
+    if(ctype == type){
+        return cexpr.get_expression();
+    }
+
+    auto last = previous();
+
+    throw WrongExprTypeError(first, last, ctype, type);
+}
+
+
+Constexpr Parser::expression(){
+    return disjunction();
+}
+
+Constexpr Parser::disjunction(){
+    auto a = conjunction();
+
+    while(match(Lexeme::Or)){
+        auto op = previous();
+        auto b = conjunction();
+        a = Constexpr::build(op, std::move(a), std::move(b));
+    }
+
+    return a;
+}
+
+Constexpr Parser::conjunction(){
+    auto a = comparison();
+
+    while(match(Lexeme::And)){
+        auto op = previous();
+        auto b = comparison();
+        a = Constexpr::build(op, std::move(a), std::move(b));
+    }
+
+    return a;
+}
+
+Constexpr Parser::comparison(){
+    auto a = term();
+
+    if(match(Lexeme::Equals, Lexeme::NotEquals, 
+             Lexeme::Less, Lexeme::LessEquals, 
+             Lexeme::Greater, Lexeme::GreaterEquals)){
+        auto op = previous();
+        auto b = term();
+        return Constexpr::build(op, std::move(a), std::move(b));
+    }
+
+    return a;
+}
+
+Constexpr Parser::term(){
+    auto a = factor();
+
+    while(match(Lexeme::Plus, Lexeme::Minus)){
+        auto op = previous();
+        auto b = factor();
+        a =  Constexpr::build(op, std::move(a), std::move(b));
+    }
+
+    return a;
+}
+
+Constexpr Parser::factor(){
+    auto a = unary();
+
+    while(match(Lexeme::Asterisk, Lexeme::Slash)){
+        auto op = previous();
+        auto b = unary();
+        a = Constexpr::build(op, std::move(a), std::move(b));
+    }
+
+    return a;
+}
+
+Constexpr Parser::unary(){
+    if(match(Lexeme::Plus, Lexeme::Minus, Lexeme::Not)){
+        auto op = previous();
+        auto e = primary();
+        return Constexpr::build(op, std::move(e));
+    }
+
+    return primary();
+}
+
+Constexpr Parser::primary(){
+    auto lexeme = current();
+
+    if(match(Lexeme::Floating, Lexeme::Integer, 
+             Lexeme::String, Lexeme::Ident)){
+        return Constexpr::build(lexeme);
+    }
+
+    if(match(Lexeme::OpenParen)){
+        auto e = expression();
+        require(Lexeme::CloseParen);
+        return e;
+    }
+
+    throw UnexpectedLexemeError(lexeme);
+}
+
+// Registry.h
+
+#include "Value.h"
+#include <string>
+#include <unordered_map>
+
+class Registry {
+public:
+    Value& operator[](const std::string& ident);
+
+private:
+    std::unordered_map<std::string, Value> m_vars;
+};
+
+// Registry.cpp
+
+#include "Registry.h"
+
+Value &Registry::operator[](const std::string &ident){
+    auto var = m_vars.find(ident);
+
+    if(var == m_vars.end()){
+        Value dv(0.0);
+        m_vars.emplace(ident, std::move(dv));
+    }
+
+    return m_vars.at(ident);
+}
+
+// Evaluator.h
+
+#include "Registry.h"
+#include "Expression.h"
+
+class Evaluator {
+public:
+    Evaluator(Registry& registry);
+    Value evaluate(const Expression& expr);
+
+private:
+    Registry& m_registry;
+
+    inline Value evaluate(const Unary& unary);
+    inline Value evaluate(const Binary& binary);
+    inline Value evaluate(const Numeric& numeric);
+    inline Value evaluate(const String& string);
+    inline Value evaluate(const Ident& ident);
+};
+
+// Evaluator.cpp
+
+#include "Evaluator.h"
+#include "Error.h"
+
+Evaluator::Evaluator(Registry &registry) : m_registry(registry){}
+
+Value Evaluator::evaluate(const Expression &expr){
+    auto type = expr.type();
+
+    switch(type){
+        case Expression::Type::Unary: return evaluate((Unary&) expr);
+        case Expression::Type::Binary: return evaluate((Binary&) expr);
+        case Expression::Type::Numeric: return evaluate((Numeric&) expr);
+        case Expression::Type::String: return evaluate((String&) expr);
+        case Expression::Type::Ident: return evaluate((Ident&) expr);
+    }
+
+    throw std::runtime_error(
+    "Fatal error: Evaluator::evaluate(const Expression &unary)");
+}
+
+Value Evaluator::evaluate(const Unary &unary){
+    Value cv = evaluate(unary.expression());
+
+    switch(unary.operation()){
+    case Lexeme::Plus:          return {+cv.to_numeric()};
+    case Lexeme::Minus:         return {-cv.to_numeric()};
+    case Lexeme::Not:           return {!cv.to_boolean()};
+    default: break;
+    }
+
+    throw std::runtime_error(
+    "Fatal error: Evaluator::evaluate(const Unary &unary)");
+}
+
+Value Evaluator::evaluate(const Binary &binary){
+    Value lv = evaluate(binary.left());
+    Value rv = evaluate(binary.right());
+
+    switch(binary.operation()){
+    case Lexeme::Plus:          return {lv.to_numeric() + rv.to_numeric()};
+    case Lexeme::Minus:         return {lv.to_numeric() - rv.to_numeric()};
+    case Lexeme::Asterisk:      return {lv.to_numeric() * rv.to_numeric()};
+    case Lexeme::Slash:         return {lv.to_numeric() / rv.to_numeric()};
+
+    case Lexeme::Equals:        return {lv.to_numeric() == rv.to_numeric()};
+    case Lexeme::NotEquals:     return {lv.to_numeric() != rv.to_numeric()};
+    case Lexeme::Less:          return {lv.to_numeric()  < rv.to_numeric()};
+    case Lexeme::LessEquals:    return {lv.to_numeric() <= rv.to_numeric()};
+    case Lexeme::Greater:       return {lv.to_numeric()  > rv.to_numeric()};
+    case Lexeme::GreaterEquals: return {lv.to_numeric() >= rv.to_numeric()};
+
+    case Lexeme::Or:            return {lv.to_boolean() || rv.to_boolean()};
+    case Lexeme::And:           return {lv.to_boolean() && rv.to_boolean()};
+
+    default: break;
+    }
+
+    throw std::runtime_error(
+    "Fatal error: Evaluator::evaluate(const Binary &binary)");
+}
+
+Value Evaluator::evaluate(const Numeric &numeric){
+    auto v = numeric.value();
+    return {v};
+}
+
+Value Evaluator::evaluate(const String &string){
+    auto v = string.value();
+    return {std::move(v)};
+}
+
+Value Evaluator::evaluate(const Ident &ident){
+    auto &name = ident.name();
+    return m_registry[name];
+}
+
+// Interpreter.h
+
+#include "Statement.h"
+#include "Expression.h"
+#include "Evaluator.h"
+#include "Registry.h"
+
+class Interpreter {
+public:
+    Interpreter();
+    void execute(const Statements& statements);
+
+private:
+    Registry registry;
+    Evaluator evaluator;
+
+    void execute(const Statement& stmt);
+    inline void execute(const If& stmt);
+    inline void execute(const For& stmt);
+    inline void execute(const While& stmt);
+    inline void execute(const Assign& stmt);
+    inline void execute(const Input& stmt);
+    inline void execute(const Print& stmt);
+};
+
+// Interpreter.cpp
+
+#include <iostream>
+#include <limits>
+#include "Interpreter.h"
+#include "Error.h"
+
+Interpreter::Interpreter() : evaluator(registry){}
+
+void Interpreter::execute(const Statements &statements){
+    for(auto& statement : statements){
+        execute(statement);
+    }
+}
+
+void Interpreter::execute(const Statement &stmt){
+    auto type = stmt.type();
+
+    switch(type){
+        case Statement::Type::If: execute((If&) stmt); break;
+        case Statement::Type::For: execute((For&) stmt); break;
+        case Statement::Type::While: execute((While&) stmt); break;
+        case Statement::Type::Assign: execute((Assign&) stmt); break;
+        case Statement::Type::Input: execute((Input&) stmt); break;
+        case Statement::Type::Print: execute((Print&) stmt); break;
+    }
+}
+
+void Interpreter::execute(const If &stmt){
+    auto& condition = stmt.condition();
+    auto v = evaluator.evaluate(condition);
+
+    if(v.to_boolean()){
+        execute(stmt.if_branch());
+    }
+    else{
+        execute(stmt.else_branch());
+    }
+}
+
+void Interpreter::execute(const For &stmt){
+    auto& start = stmt.start();
+    auto& end = stmt.end();
+    auto& ident = stmt.ident();
+    auto& body = stmt.body();
+
+    registry[ident] = evaluator.evaluate(start);
+
+    do{
+        auto first = registry[ident];
+        auto second = evaluator.evaluate(end);
+
+        auto a = first.to_numeric();
+        auto b = second.to_numeric();
+
+        if(a <= b){
+            execute(body);
+            registry[ident] = a + 1;
+        }
+        else break;
+    }
+    while(true);
+}
+
+void Interpreter::execute(const While &stmt){
+    auto& expr = stmt.condition();
+    auto& body = stmt.body();
+
+    do{
+        auto condition = evaluator.evaluate(expr);
+        auto v = condition.to_boolean();
+
+        if(v){
+            execute(body);
+        }
+        else break;
+    }
+    while(true);
+}
+
+void Interpreter::execute(const Assign &stmt){
+    auto& ident = stmt.ident();
+    auto& expr = stmt.expression();
+    registry[ident] = evaluator.evaluate(expr);
+}
+
+void Interpreter::execute(const Input &stmt){
+    auto& message = stmt.message();
+    auto& ident = stmt.ident();
+
+    std::cout << (message.empty() ? "? " : message);
+    double input;
+    std::cin >> input;
+
+    if(std::cin.fail()){
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+
+    registry[ident] = input;
+}
+
+void Interpreter::execute(const Print &stmt){
+    auto& params = stmt.params();
+
+    for(auto& param : params){
+        auto output = evaluator.evaluate(param);
+
+        switch(output.get_type()){
+            case Value::Numeric: std::cout << output.to_numeric(); break;
+            case Value::Boolean: std::cout << output.to_boolean(); break;
+            case Value::Literal: std::cout << output.to_literal(); break;
+        }
+    }
+
+    std::cout << std::endl;
+}

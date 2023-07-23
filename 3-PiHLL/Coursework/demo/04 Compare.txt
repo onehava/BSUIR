@@ -1,0 +1,12 @@
+Input "A = ", A
+Input "B = ", B
+
+If A = B Then
+	Print "="
+Else
+	If A > B Then
+		Print ">"
+	Else
+		Print "<"
+	Endif
+EndIf

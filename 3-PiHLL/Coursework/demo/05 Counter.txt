@@ -1,0 +1,12 @@
+Input "Enter number for counting: ", Counter
+
+If counter <= 0 then
+	Print "Number for counting should be positive!"
+Else
+	While counter > 0
+		Print counter ; "..."
+		counter = counter - 1
+	Wend
+	
+	Print "Let's jam!"
+Endif

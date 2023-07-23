@@ -1,0 +1,6 @@
+INPUT "A = " , A
+INPUT "B = " , B
+
+Print A ; " + " ; B ; " = " ; A + B
+
+

@@ -1,0 +1,45 @@
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+
+# Temp kernel files
+.tmp_versions/
+.*.ko.cmd
+.*.mod.o.cmd
+.*.o.cmd
+Module.symvers
+modules.order
+*.mod.c
+
+# Vscode
+.vscode

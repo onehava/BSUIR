@@ -1,0 +1,25 @@
+Magic = 1234
+Score = 0
+
+Print "Game 'Guess the number'"
+Print "Rules:"
+Print "    1. You should guess the magic number"
+Print "    2. There are no rules"
+Print "    3. Enjoy!"
+Print ""
+
+Input "Enter your answer: ", N
+
+While N <> Magic
+    If N < Magic Then Print "Your number is less than magic, please, try again"
+    If N > Magic Then Print "Your number is greater than magic, please, try again"
+
+    Score = Score + 1
+
+    Print ""
+    Input "Enter your answer: ", N
+Wend
+
+Print ""
+Print "You win!"
+Print "Wrong attempts: " ; Score

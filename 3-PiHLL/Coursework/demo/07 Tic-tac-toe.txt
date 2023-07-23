@@ -1,0 +1,122 @@
+Print "Game 'Tic-tac-toe'"
+Print ""
+
+' A | B | C
+' ---------
+' D | E | F
+' ---------
+' G | H | I
+
+Let Turns = 9
+Let Turn = 1
+Let Win = 0
+
+While Win = 0
+	Let Correct = 0
+
+	While Correct = 0
+		Print A ; " | " ; B ; " | " ; C
+		Print "---------"
+		Print D ; " | " ; E ; " | " ; F
+		Print "---------"
+		Print G ; " | " ; H ; " | " ; I
+		Print ""
+	
+		If Turn = 1 Then
+			Print "First player turn"		
+		Else
+			Print "Second player turn"
+		Endif
+		
+		Print ""	
+		
+		Input "X: ", X
+		Input "Y: ", Y
+		
+		If X < 0 Or X > 3 Or Y < 0 Or Y > 3 Then
+			Print "Error: X and Y should be in range [1; 3]"
+		Else
+			Correct = 1
+		Endif
+		
+		Print ""
+	Wend
+	
+	If X = 1 Then
+		If Y = 1 Then Current = A
+		If Y = 2 Then Current = B
+		If Y = 3 Then Current = C
+	Endif
+	
+	If X = 2 Then
+		If Y = 1 Then Current = D
+		If Y = 2 Then Current = E
+		If Y = 3 Then Current = F
+	Endif
+	
+	If X = 3 Then
+		If Y = 1 Then Current = G
+		If Y = 2 Then Current = H
+		If Y = 3 Then Current = I
+	Endif
+	
+	If Current = 0 Then
+		If X = 1 Then
+			If Y = 1 Then A = Turn
+			If Y = 2 Then B = Turn
+			If Y = 3 Then C = Turn
+		Endif
+		
+		If X = 2 Then
+			If Y = 1 Then D = Turn
+			If Y = 2 Then E = Turn
+			If Y = 3 Then F = Turn
+		Endif
+		
+		If X = 3 Then
+			If Y = 1 Then G = Turn
+			If Y = 2 Then H = Turn
+			If Y = 3 Then I = Turn
+		Endif
+
+		If A = B and A = C and B = C Then Win = A
+		If D = E and D = F and E = F Then Win = D
+		If G = H and G = I and H = I Then Win = G
+		
+		If A = D and A = G and D = G Then Win = A
+		If B = E and B = H and E = H Then Win = B
+		If C = F and C = I and F = I Then Win = C
+		
+		If A = E and A = I and E = I Then Win = A
+		If C = E and C = G and E = G Then Win = C
+		
+		Turns = Turns - 1
+		
+		If Turns = 0 Then
+			Win = 3
+		Else
+			If Turn = 1 Then
+				Turn = 2
+			Else
+				Turn = 1
+			Endif
+		Endif
+	Else
+		Print "Error: this X and Y are already taken"
+		Print ""
+	Endif
+Wend
+
+Print A ; " | " ; B ; " | " ; C
+Print "---------"
+Print D ; " | " ; E ; " | " ; F
+Print "---------"
+Print G ; " | " ; H ; " | " ; I
+Print ""
+
+If Win = 3 Then Print "Draw"
+If Win = 2 Then Print "Second player wins!"
+If Win = 1 Then Print "First player wins!"
+
+Print ""
+

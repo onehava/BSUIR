@@ -1,0 +1,74 @@
+\section{Структура входных и выходных данных}
+
+\subsection{Входные данные}
+
+Входные данные представлены текстовым файлом с исходным текстом программы на языке Бейсик.
+
+Синтаксис данной реализации языка можно определить в виде расширенной формы Бэкуса-Наура
+следующего вида:
+
+\begin{Verbatim}[fontsize=\small]
+    CHARS = ? все допустимые символы ?
+    EOL   = ? символ окончания строки ?
+    EOF   = ? символ окончания файла ?
+
+    DIGIT = '0' | '1' | '2' | '3' | '4' | 
+            '5' | '6' | '7' | '8' | '9'
+    ALPHA = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 
+            'I' | 'J' | 'K' | 'L' | 'O' | 'M' | 'N' | 'P' | 
+            'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 
+            'Y' | 'Z'
+
+    IDENTIFIER = (ALPHA) {ALPHA | DIGIT}
+    INTEGER    = (DIGIT) {DIGIT}
+    FLOATING   = (INTEGER) ['.'  INTEGER]
+    STRING     = '"' {CHARS} '"' 
+
+    PROGRAM  = COMPOUND
+    COMPOUND = {LINE}
+    LINE     = STATEMENT EOL
+    
+    STATEMENT = IF | FOR | WHILE | ASSIGN | INPUT | PRINT
+
+    IF     = 'IF' BEXPR 'THEN' (LIF | MIF)
+    LIF    = STATEMENT
+    MIF    = EOL BEXPR ['ELSE' COMPOUND] 'ENDIF'
+
+    FOR    = 'FOR' IDENT '=' NEXPR 'TO' NEXPR COMPOUND 'NEXT'
+    WHILE  = 'WHILE' BEXPR COMPOUND 'WEND'
+
+    ASSIGN = IDENT '=' NEXPR
+    
+    INPUT [STRING], IDENT
+    PRINT (EXPR) {';' EXPR}
+    
+    SEXPR = ? строчные выражения ?
+    NEXPR = ? числовные выражения ?
+    BEXPR = ? логические выражения ?
+\end{Verbatim}
+
+Выражения в языке строятся согласно семантическим правилам операций,
+перечисленных ниже:
+\begin{itemize}
+    \item Бинарные арифметические операции над числами.
+
+    \item Бинарные операции логического сложения и умножения.
+
+    \item Бинарные операции сравнения чисел.
+    
+    \item Унарные операции 'плюс' и 'минус' для чисел.
+
+    \item Унарная операция логического отрицания.
+    
+    \item Числовые, логические, строковые терминалы.
+    
+    \item Скобочная вложенность.
+\end{itemize}
+
+\subsection{Выходные данные}
+
+Выходными данными интерпретатора можно считать
+результат выполнения операций \emph{Input} и \emph{Print},
+возможные сообщения об ошибках,
+а также внутреннее состояние памяти, отвечающей за хранение
+переменных программы.

@@ -1,0 +1,6 @@
+# ignore vscode environment
+.vscode
+
+# ignore jetbrains environment
+.idea/
+cmake-build-*/

@@ -1,0 +1,33 @@
+% !TEX root = report.tex
+
+\input{preamble.tex}
+\usepackage{fancyvrb} % внести в следующую версию преамбулы
+\usepackage{verbatim}
+
+\begin{document}
+
+    \input{title.tex}                   % Титульный лист пояснительной записки
+    \input{tech.tex}                    % Техническое задание проекта
+    \input{toc.tex}                     % Содержание пояснительной записки
+    
+    \input{sections/introduction.tex}   % Введение
+
+    \input{sections/section1.tex}       % Теоретические сведения
+    \input{sections/section2.tex}       % Постановка задачи
+    \input{sections/section3.tex}       % Структура входных и выходных данных
+    \input{sections/section4.tex}       % Структурное проектирование
+    \input{sections/section5.tex}       % Функциональное проектирование
+    \input{sections/section6.tex}       % Результат выполнения программы
+
+    \input{sections/conclusion.tex}     % Заключение
+
+    \input{bib.tex}                     % Cписок использованных источников
+
+    \input{apps/appendix_src.tex}       % Листинг программы
+    \input{apps/appendix_uml.tex}       % Диаграмма классов
+    \input{apps/appendix_bss.tex}       % Блок-схемы алгоритмов
+    \input{apps/appendix_stt.tex}       % Ведомость проекта
+
+    \nocite{*}                          % Не искать цитаты
+
+\end{document}
