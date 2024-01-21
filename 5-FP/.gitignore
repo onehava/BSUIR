@@ -1,0 +1,7 @@
+# IntellijIDEA
+.idea/
+
+# Scala SBT
+.bsp/
+target/
+project/
