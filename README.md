@@ -24,3 +24,23 @@
 
 АПК (Архитектура персональных компьютеров)
 - [Лабораторные работы](https://github.com/Qurcaivel/BSUIR/tree/master/4-PCA/Common).
+
+## Семестр 5
+
+СхемТ (Схемотехника)
+- [Курсовой проект](https://github.com/onehava/BSUIR/tree/master/5-Electronics/Coursework).
+
+ФПрог (Функциональное программирование)
+- [Лабораторные работы](https://github.com/onehava/BSUIR/tree/master/5-FP/Common).
+
+ОКС (Основы компьютерных сетей)
+- [Ответы на экзаменационные вопросы](https://github.com/onehava/BSUIR/tree/master/5-FoCN/Exam-answers).
+
+ИиУВМ (Интерфейсы и устройства вычислительных машин)
+- [Лабораторные работы](https://github.com/onehava/BSUIR/tree/master/5-IaDoC/Common).
+
+СиФОВМ (Структурные и функциональные основы вычислительных машин)
+- [Лабораторные работы](https://github.com/onehava/BSUIR/tree/master/5-SaFFoC/Common).
+
+ЖЦРПО (Жизненный цикл разработки программного обеспечения)
+- [Лабораторные работы](https://github.com/onehava/BSUIR/tree/master/5-SDLC/Common).
