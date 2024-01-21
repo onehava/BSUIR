@@ -34,6 +34,7 @@
 - [Лабораторные работы](https://github.com/onehava/BSUIR/tree/master/5-FP/Common).
 
 ОКС (Основы компьютерных сетей)
+- [Лабораторные работы](https://github.com/onehava/BSUIR/tree/master/5-FoCN/Common).
 - [Ответы на экзаменационные вопросы](https://github.com/onehava/BSUIR/tree/master/5-FoCN/Exam-answers).
 
 ИиУВМ (Интерфейсы и устройства вычислительных машин)
