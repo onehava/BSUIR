@@ -1,0 +1,9 @@
+drop table apartment_type;
+drop table service;
+drop table apartment;
+drop table individual_identity;
+drop table company_identity;
+drop table customer;
+drop table apartment_reservation;
+drop table guest;
+drop table service_order;

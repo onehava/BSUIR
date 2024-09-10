@@ -1,0 +1,2 @@
+[global.databases]
+hotel = { url = "postgres://postgres:pass@localhost/hotel" }
